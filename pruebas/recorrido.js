@@ -14,9 +14,7 @@ const ok = (c, msg) => { if (c) console.log('OK    ' + msg); else { console.log(
 async function entrar(page, correo, { primerIngreso } = {}) {
   await page.goto(BASE);
   await page.waitForSelector('form[data-form=login]');
-  await page.click(`[data-demo="${correo}"]`);
-  await page.fill('input[name=clave]', 'clave1234');
-  await page.click('form[data-form=login] button[type=submit]');
+  await page.click(`[data-demo="${correo}"]`); // un toque entra directo
   if (primerIngreso) {
     await page.waitForSelector('form[data-form=clave]');
     await page.fill('input[name=clave]', 'nueva-clave-2026');
@@ -45,7 +43,7 @@ async function sinDesborde(page, etiqueta) {
 (async () => {
   const browser = await chromium.launch();
   const cuentas = [
-    { correo: 'andrea.rojas@caminos.example', clave: 'gerencia', primerIngreso: true, esperadas: ['inicio', 'malla', 'comunicados', 'asistencia', 'informes', 'solicitudes', 'equipo'] },
+    { correo: 'andrea.rojas@caminos.example', clave: 'gerencia', esperadas: ['inicio', 'malla', 'comunicados', 'asistencia', 'informes', 'solicitudes', 'equipo'] },
     { correo: 'carolina.mendez@caminos.example', clave: 'directora', esperadas: ['inicio', 'malla', 'comunicados', 'asistencia', 'informes', 'solicitudes'] },
     { correo: 'julian.torres@caminos.example', clave: 'supervisor', esperadas: ['inicio', 'malla', 'comunicados', 'solicitudes', 'equipo'] },
     { correo: 'daniela.castro@caminos.example', clave: 'colaboradora', esperadas: ['inicio', 'malla', 'comunicados', 'solicitudes'] },

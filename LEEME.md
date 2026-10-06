@@ -34,7 +34,7 @@ npx http-server -p 8765 .
 # abrir http://localhost:8765/pruebas/demo.html
 ```
 
-En la pantalla de acceso hay botones con las cuentas de prueba (gerencia y administración, directora de operaciones, supervisor, colaboradora). La contraseña de todas es `clave1234`. La cuenta de gerencia arranca con el primer ingreso pendiente (cambio de contraseña y autorización de datos) para ver ese flujo.
+En la pantalla de acceso hay botones con las cuentas de prueba, que entran directo (gerencia y administración, directora de operaciones, supervisor, colaboradora). La contraseña de todas es `clave1234`. Cada cuenta entra con un toque. El primer ingreso (cambio de contraseña y autorización de datos) se ve al crear una cuenta nueva desde Equipo y entrar con ella.
 
 Para un solo archivo sin servidor: `python3 pruebas/armar_vista_previa.py salida.html`.
 

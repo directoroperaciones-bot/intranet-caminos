@@ -403,10 +403,10 @@
   function loginView() {
     const demo = CFG.demo && CFG.demo.cuentas ? `<div class="demo-cuentas">
         <span class="eyebrow">Demostración · datos de ejemplo</span>
-        <p class="hint">Personas y datos ficticios: nada de lo que hagas aquí se guarda, al recargar todo vuelve a empezar. Toca una cuenta para llenar el correo. La contraseña de todas es <b>${esc(CFG.demo.clave || '')}</b>.</p>
-        <div class="demo-lista">${CFG.demo.cuentas.map((c) => `<button type="button" class="demo-cta" data-demo="${esc(c.correo)}"><b>${esc(c.rol)}</b><span>${esc(c.nombre)}</span></button>`).join('')}</div>
+        <p class="hint">Personas y datos ficticios: nada de lo que hagas aquí se guarda, al recargar todo vuelve a empezar. Toca una cuenta para entrar directo con ese rol. Si prefieres escribir, la contraseña de todas es <b>${esc(CFG.demo.clave || '')}</b>.</p>
+        <div class="demo-lista">${CFG.demo.cuentas.map((c) => `<button type="button" class="demo-cta" data-demo="${esc(c.correo)}"${S.ocupado ? ' disabled' : ''}><b>${esc(c.rol)}</b><span>${esc(c.nombre)} · Entrar</span></button>`).join('')}</div>
       </div>` : '';
-    return marcoAcceso(`<form class="card login-card" data-form="login" novalidate>
+    return marcoAcceso(`${demo}<form class="card login-card" data-form="login" novalidate>
         <span class="eyebrow">Ingresar</span>
         <h2>Entra a la intranet</h2>
         <label class="field"><span>Correo corporativo</span>
@@ -416,7 +416,7 @@
         ${S.error ? `<p class="err" role="alert">${ico('alerta')}${esc(S.error)}</p>` : ''}
         <button class="btn block" type="submit"${ocupado('login')}>${S.ocupado === 'login' ? 'Entrando…' : 'Entrar'}</button>
         <p class="hint">¿Olvidaste tu contraseña? Pídele a la administración que la restablezca.</p>
-      </form>${demo}`);
+      </form>`);
   }
 
   function claveView() {
@@ -1877,7 +1877,7 @@
       if (idCom) { const n = document.getElementById('com-' + idCom); if (n) n.scrollIntoView({ block: 'center' }); }
       return;
     }
-    if (d.demo) { S.correoLogin = d.demo; S.error = ''; foco = 'input[name=clave]'; render(); return; }
+    if (d.demo) { if (!S.ocupado) await iniciarSesion(d.demo, CFG.demo.clave); return; }
     if (d.accion) {
       switch (d.accion) {
         case 'menu': S.menu = !S.menu; render(); return;
@@ -2042,29 +2042,32 @@
     if (d.guia) { const n = document.getElementById('guia-' + d.guia); if (n) n.scrollIntoView({ behavior: 'smooth', block: 'start' }); }
   });
 
+  async function iniciarSesion(correo, clave) {
+    S.correoLogin = correo;
+    if (!correo || !clave) { S.error = 'Escribe tu correo y tu contraseña.'; foco = correo ? 'input[name=clave]' : 'input[name=correo]'; render(); return; }
+    S.error = '';
+    S.ocupado = 'login';
+    render();
+    try {
+      const { data, error } = await sb.auth.signInWithPassword({ email: correo, password: clave });
+      if (error) throw error;
+      S.ocupado = '';
+      await cargarUsuario(data.user);
+    } catch (e) {
+      S.ocupado = '';
+      S.error = errorTexto(e);
+      foco = 'input[name=clave]';
+      render();
+    }
+  }
+
   document.addEventListener('submit', async (ev) => {
     const f = ev.target.closest('form[data-form]');
     if (!f) return;
     ev.preventDefault();
     const tipo = f.dataset.form;
     if (tipo === 'login') {
-      const correo = f.correo.value.trim().toLowerCase(), clave = f.clave.value;
-      S.correoLogin = correo;
-      if (!correo || !clave) { S.error = 'Escribe tu correo y tu contraseña.'; foco = correo ? 'input[name=clave]' : 'input[name=correo]'; render(); return; }
-      S.error = '';
-      S.ocupado = 'login';
-      render();
-      try {
-        const { data, error } = await sb.auth.signInWithPassword({ email: correo, password: clave });
-        if (error) throw error;
-        S.ocupado = '';
-        await cargarUsuario(data.user);
-      } catch (e) {
-        S.ocupado = '';
-        S.error = errorTexto(e);
-        foco = 'input[name=clave]';
-        render();
-      }
+      await iniciarSesion(f.correo.value.trim().toLowerCase(), f.clave.value);
       return;
     }
     if (tipo === 'clave') {

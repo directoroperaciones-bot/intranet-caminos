@@ -25,9 +25,7 @@ let page;
       await page.goto(BASE);
     }
     await page.waitForSelector('form[data-form=login]');
-    await page.click(`[data-demo="${correo}"]`);
-    await page.fill('input[name=clave]', 'clave1234');
-    await page.click('form[data-form=login] button[type=submit]');
+    await page.click(`[data-demo="${correo}"]`); // un toque entra directo
     await page.waitForSelector('header.top, form[data-form=clave], [data-accion=aceptarDatos]');
     if (await page.$('form[data-form=clave]')) {
       await page.fill('input[name=clave]', 'nueva-clave-2026');

@@ -9,6 +9,8 @@
    (supabase/pruebas): sirve para la interfaz.
 
    Datos sembrados: personas FICTICIAS de ejemplo (correo @caminos.example),
+   todas entran directo; el primer ingreso (cambio de contraseña y datos) se
+   ve al crear una cuenta nueva desde Equipo.
    una sede (Bogotá), turnos de ejemplo y 45 días de jornadas generadas
    con una semilla fija. Contraseña de todas las cuentas: clave1234.
    ===================================================================== */
@@ -84,7 +86,7 @@
 
   // Personas ficticias (correo @caminos.example, dominio reservado para ejemplos)
   const GENTE = [
-    { id: 'a0000000-0000-4000-8000-000000000001', nombre: 'Andrea Rojas', correo: 'andrea.rojas@caminos.example', area_id: 1, rol: 'gerente', es_admin: true, etiqueta: 'Gerencia y administración', primerIngreso: true },
+    { id: 'a0000000-0000-4000-8000-000000000001', nombre: 'Andrea Rojas', correo: 'andrea.rojas@caminos.example', area_id: 1, rol: 'gerente', es_admin: true, etiqueta: 'Gerencia y administración' },
     { id: 'a0000000-0000-4000-8000-000000000002', nombre: 'Carolina Méndez', correo: 'carolina.mendez@caminos.example', area_id: 3, rol: 'directora', etiqueta: 'Directora de operaciones', horario: [3, 3, 3, 3, 4, 5] },
     { id: 'a0000000-0000-4000-8000-000000000003', nombre: 'Julián Torres', correo: 'julian.torres@caminos.example', area_id: 4, rol: 'supervisor', etiqueta: 'Supervisor (contabilidad)', horario: [1, 1, 1, 1, 2, null] },
     { id: 'a0000000-0000-4000-8000-000000000004', nombre: 'Daniela Castro', correo: 'daniela.castro@caminos.example', area_id: 2, rol: 'colaborador', etiqueta: 'Colaboradora (ventas)', horario: [1, 1, 1, 1, 2, 5], hoyLibre: true },
