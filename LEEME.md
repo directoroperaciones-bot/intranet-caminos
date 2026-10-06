@@ -18,6 +18,10 @@ Se cambian o se agregan en la tabla `herramientas` (un `insert` o `update`), sin
 
 ## 0. Publicación en GitHub Pages
 
+- **Sitio:** https://directoroperaciones-bot.github.io/intranet-caminos/
+- **Demostración:** https://directoroperaciones-bot.github.io/intranet-caminos/pruebas/demo.html
+- **Repositorio:** https://github.com/directoroperaciones-bot/intranet-caminos (público, rama `main`, carpeta raíz). Es una copia de esta carpeta: cada cambio se hace aquí, se prueba y se copia allá (`cp -a intranet/. ../intranet-caminos/`), cambiando antes el `?v=` de `index.html`.
+
 La carpeta se publica tal cual como un sitio estático (rama `main`, carpeta raíz, con `.nojekyll`). Mientras `assets/config.js` diga `PENDIENTE`, la página principal muestra «La intranet se está preparando» y un botón a la demostración. En cuanto se ponen la URL y la llave publicable de Supabase, la misma dirección pasa a ser la intranet real; no cambia el enlace del equipo.
 
 ## 1. Ver la demostración
