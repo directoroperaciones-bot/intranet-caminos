@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <base href="../">
+  <title>Intranet Caminos · demostración</title>
+  <meta name="theme-color" content="#F25061">
+  <meta name="color-scheme" content="light">
+  <meta name="robots" content="noindex, nofollow">
+  <link rel="icon" type="image/svg+xml" href="assets/favicon.svg">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap">
+  <link rel="stylesheet" href="assets/estilos.css">
+  <link rel="stylesheet" href="assets/app.css">
+</head>
+<body>
+  <!-- Igual que index.html, pero con Supabase simulado en memoria y datos de ejemplo -->
+  <div id="app"></div>
+  <script src="pruebas/supabase-simulado.js"></script>
+  <script>window.INTRANET_CONFIG = { supabaseUrl: 'https://demo.local', supabaseKey: 'demo', demo: window.SUPABASE_DEMO };</script>
+  <script src="assets/app.js"></script>
+</body>
+</html>
