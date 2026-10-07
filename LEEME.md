@@ -50,10 +50,10 @@ intranet/
 │   ├── app.js                ← toda la aplicación
 │   ├── logo-caminos.svg, logo-caminos-blanco.svg, estrella.svg, favicon.svg
 ├── supabase/
-│   ├── migrations/001 … 007  ← base de datos (ver tabla abajo)
-│   ├── instalar_todo.sql     ← las 7 en un archivo (bash supabase/unir.sh)
+│   ├── migrations/001 … 008  ← base de datos (ver tabla abajo)
+│   ├── instalar_todo.sql     ← todas en un archivo (bash supabase/unir.sh)
 │   ├── functions/crear-usuario/index.ts
-│   └── pruebas/              ← 120 pruebas de permisos en Postgres local
+│   └── pruebas/              ← 124 pruebas de permisos en Postgres local
 └── pruebas/
     ├── demo.html, supabase-simulado.js
     ├── recorrido.js          ← cada rol, cada pestaña, escritorio y celular
@@ -74,10 +74,11 @@ Como Caminos es un cliente nuevo, se fusionaron las del manual (el manual lo per
 | `005_permisos_servicio.sql` | 005 |
 | `006_supervisor.sql` | 006 a 010 |
 | `007_horario_fijo.sql` | 011 |
+| `008_ver_solicitudes.sql` | Corrección propia: la regla de lectura de solicitudes usa la fila y no vuelve a consultar la tabla (sin esto, enviar una solicitud fallaba en Supabase real) |
 
 ## 3. Pruebas hechas
 
-- **Permisos en Postgres** (`supabase/pruebas/correr.sh`): 120 reglas en verde. Marcas solo con `marcar()`, orden de los pasos, bloqueo por IP, malla por sede, supervisor sin poderes de gerencia, comunicados por destinatario, solicitudes por revisor, ausencias aprobadas, `anon` sin acceso.
+- **Permisos en Postgres** (`supabase/pruebas/correr.sh`): 124 reglas en verde. Marcas solo con `marcar()`, orden de los pasos, bloqueo por IP, malla por sede, supervisor sin poderes de gerencia, comunicados por destinatario, solicitudes por revisor, ausencias aprobadas, `anon` sin acceso.
 - **Interfaz** (`pruebas/recorrido.js`): 4 roles × 2 anchos (1300 px y 390 px), cada pestaña sin desborde horizontal y sin errores de página.
 - **Acciones** (`pruebas/acciones.js`): 54 verificaciones, entre ellas que el informe cuadra con un cálculo manual independiente y que el CSV sale con BOM, `;` y `\r\n`.
 

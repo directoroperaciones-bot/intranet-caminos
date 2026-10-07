@@ -416,6 +416,7 @@
         ${S.error ? `<p class="err" role="alert">${ico('alerta')}${esc(S.error)}</p>` : ''}
         <button class="btn block" type="submit"${ocupado('login')}>${S.ocupado === 'login' ? 'Entrando…' : 'Entrar'}</button>
         <p class="hint">¿Olvidaste tu contraseña? Pídele a la administración que la restablezca.</p>
+        ${CFG.demo ? '' : '<p class="hint">¿Aún no tienes cuenta? Mira cómo funciona en la <a href="pruebas/demo.html">demostración</a>.</p>'}
       </form>`);
   }
 

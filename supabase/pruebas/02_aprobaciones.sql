@@ -34,6 +34,8 @@ select prueba.como('Colab Ventas');
 select prueba.ok(prueba.filas($$insert into solicitudes (persona_id, tipo, desde, hasta, motivo) values (auth.uid(), 'vacaciones', current_date + 10, current_date + 14, 'Viaje familiar')$$) = 1, 'crea una solicitud de vacaciones');
 select prueba.ok(prueba.filas($$insert into solicitudes (persona_id, tipo, desde, hasta, motivo) values (auth.uid(), 'incapacidad', current_date - 2, current_date - 1, 'Gripa')$$) = 1, 'crea una incapacidad');
 select prueba.ok(prueba.filas($$insert into solicitudes (persona_id, tipo, desde, hasta, hora_desde, hora_hasta) values (auth.uid(), 'permiso', current_date + 3, current_date + 3, '14:00', '16:00')$$) = 1, 'crea un permiso por horas');
+select prueba.ok(prueba.filas($$insert into solicitudes (persona_id, tipo, desde, hasta) values (auth.uid(), 'permiso', current_date + 60, current_date + 60) returning id$$) = 1, 'crear y devolver la fila, como hace la página (.insert().select())');
+select prueba.ok(prueba.filas($$delete from solicitudes where persona_id = auth.uid() and desde = current_date + 60$$) = 1, 'y cancelarla');
 select prueba.falla($$insert into solicitudes (persona_id, tipo, desde, hasta, estado) values (auth.uid(), 'permiso', current_date, current_date, 'aprobada')$$, 'no se crea una solicitud ya aprobada');
 select prueba.falla($$insert into solicitudes (persona_id, tipo, desde, hasta) values (prueba.id('Colab Operaciones'), 'permiso', current_date, current_date)$$, 'no se crea a nombre de otra persona');
 select prueba.falla($$insert into solicitudes (persona_id, tipo, desde, hasta, hora_desde) values (auth.uid(), 'permiso', current_date, current_date, '10:00')$$, 'las horas van las dos o ninguna');

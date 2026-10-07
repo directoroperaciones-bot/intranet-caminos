@@ -5,7 +5,7 @@ cd "$(dirname "$0")"
 {
   echo "-- ====================================================================="
   echo "-- Intranet Caminos · instalar_todo.sql"
-  echo "-- Las 7 migraciones en orden, en un solo archivo, para pegar en el SQL Editor"
+  echo "-- Las migraciones en orden, en un solo archivo, para pegar en el SQL Editor"
   echo "-- de Supabase. Se regenera con: bash supabase/unir.sh"
   echo "-- ====================================================================="
   for f in migrations/*.sql; do echo; echo "-- >>> $(basename "$f")"; cat "$f"; done

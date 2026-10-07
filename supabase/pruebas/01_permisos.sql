@@ -194,6 +194,8 @@ select prueba.como('Directora Bogotá');
 select prueba.falla($$insert into comunicados (autor_id, titulo) values (prueba.id('Gerencia Admin'), 'Suplantar')$$, 'nadie publica a nombre de otra persona');
 select prueba.ok(prueba.filas($$insert into comunicados (autor_id, titulo, cuerpo, destino, destino_id) values (auth.uid(), 'Solo ventas', 'Reunión de ventas', 'area', (select id from areas where nombre = 'Ventas'))$$) = 1, 'la directora publica para un área');
 select prueba.ok(prueba.filas($$insert into comunicados (autor_id, titulo, cuerpo) values (auth.uid(), 'Para todos', 'Bienvenida')$$) = 1, 'la directora publica para todo el equipo');
+select prueba.ok(prueba.filas($$insert into comunicados (autor_id, titulo) values (auth.uid(), 'Temporal') returning id$$) = 1, 'publicar y devolver la fila, como hace la página');
+select prueba.ok(prueba.filas($$delete from comunicados where titulo = 'Temporal'$$) = 1, 'la autora borra su comunicado');
 select prueba.como('Colab Ventas');
 select prueba.ok(prueba.cuenta($$select 1 from comunicados$$) = 2, 'el área de ventas ve los dos comunicados');
 select prueba.ok(prueba.filas($$insert into comunicado_lecturas (comunicado_id, persona_id) select id, auth.uid() from comunicados where titulo = 'Solo ventas'$$) = 1, 'una destinataria confirma la lectura');
