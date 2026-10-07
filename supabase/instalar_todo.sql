@@ -697,6 +697,7 @@ create policy horario_base_editar on horario_base for all to authenticated
   using (lidera_sede(sede_de(persona_id)) or es_supervisor())
   with check (lidera_sede(sede_de(persona_id)) or es_supervisor());
 
+revoke all on horario_base from anon;
 grant select, insert, update, delete on horario_base to authenticated;
 grant all on horario_base to service_role;
 
