@@ -172,7 +172,7 @@
   const gestionaCuentas = () => esAdmin() || esSupervisor();
   const puedeTocarCuenta = (p) => p.id !== P().id && (esAdmin() || (esSupervisor() && p.rol === 'colaborador' && !p.es_admin));
   const puedePublicar = () => esLider();
-  const ROLES = { colaborador: 'Colaborador', supervisor: 'Supervisor', directora: 'Directora de operaciones', gerente: 'Gerente' };
+  const ROLES = { colaborador: 'Colaborador', supervisor: 'Supervisor', directora: 'Dirección de operaciones', gerente: 'Gerente' };
   const tol = () => {
     const t = S.config.tolerancias || {};
     return { entrada: t.entrada_min == null ? 5 : +t.entrada_min, almuerzo: t.almuerzo_min == null ? 5 : +t.almuerzo_min };
@@ -1391,7 +1391,7 @@
           <button type="button" class="switch" role="switch" aria-checked="${moduloSol()}" data-accion="moduloSol"${ocupado('modulo')}><span></span><b>${moduloSol() ? 'Activo' : 'Apagado'}</b></button>
         </div>
         <h3>¿Quién revisa las solicitudes?</h3>
-        <p class="hint">Las líderes de sede no revisan solicitudes por defecto. Asigna aquí a quien las revisa (por ejemplo, contabilidad).</p>
+        <p class="hint">Quienes lideran una sede no revisan solicitudes por defecto. Asigna aquí a quien las revisa (por ejemplo, contabilidad).</p>
         ${revisoresView()}
       </section>` : '';
     return encabezado('Vacaciones, permisos e incapacidades', '<em>Solicitudes</em>', moduloSol() ? 'Pide tus días y sigue su estado. La gerencia asigna quién las revisa.' : '')
@@ -1675,7 +1675,7 @@
             ${variasSedes() ? `<label class="field"><span>Sede</span><select name="sede_id">${S.sedes.map((s) => `<option value="${s.id}"${String(b.sede_id || P().sede_id) === String(s.id) ? ' selected' : ''}>${esc(s.nombre)}</option>`).join('')}</select></label>` : ''}
             <label class="field"><span>Área</span><select name="area_id"><option value="">Sin área</option>${S.areas.map((a) => `<option value="${a.id}"${String(b.area_id || '') === String(a.id) ? ' selected' : ''}>${esc(a.nombre)}</option>`).join('')}</select></label>
             <label class="field"><span>Rol</span><select name="rol">${rolesCrear.map((r) => `<option value="${r}"${(b.rol || 'colaborador') === r ? ' selected' : ''}>${esc(ROLES[r])}${r === 'supervisor' ? ' (crea cuentas)' : ''}</option>`).join('')}</select>
-              ${esAdmin() ? '' : '<small class="hint">Las cuentas de supervisores, directoras y gerentes las crea la administración.</small>'}</label>
+              ${esAdmin() ? '' : '<small class="hint">Las cuentas de supervisión, dirección y gerencia las crea la administración.</small>'}</label>
           </div>
           <button class="btn" type="submit"${ocupado('crear')}>${ico('usuarioMas')}${S.ocupado === 'crear' ? 'Creando…' : 'Crear cuenta'}</button>
         </form>
@@ -1799,7 +1799,7 @@
           <li>Puedes cambiar sede y área de colaboradores, darles una contraseña nueva o desactivarlos. Las demás cuentas son solo de la administración.</li>
           <li>En «Malla» editas la semana, el horario fijo y los turnos de todas las sedes.</li>
         </ul>` },
-      { id: 'lideres', titulo: 'Para las líderes de sede', ver: esLider(), html: `<ul>
+      { id: 'lideres', titulo: 'Para quienes lideran una sede', ver: esLider(), html: `<ul>
           <li><b>Malla:</b> carga una vez el <b>horario fijo</b> de cada persona; la malla de cada semana se llena sola. Para un día distinto (un festivo, un cambio) toca la celda en «Semana». «↺ Volver al horario fijo» deshace el cambio.</li>
           <li><b>Turnos:</b> son las franjas de horario. Si cambias sus horas, cambian para todas las personas que lo tienen, también hacia atrás en los informes.</li>
           <li><b>Asistencia:</b> quién está trabajando hoy comparado con la malla. Toca «Actualizar» para ver lo último.</li>
