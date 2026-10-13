@@ -455,6 +455,7 @@
   }
 
   // ---------- Auth ----------
+  const enlaces = {};
   const avisar = (evento) => oyentes.forEach((cb) => { try { cb(evento, sesion); } catch (e) { /* nada */ } });
   const usuarioPublico = (u) => ({ id: u.id, email: u.email, user_metadata: clonar(u.user_metadata) });
   const auth = {
@@ -483,6 +484,25 @@
       return { data: { user: clonar(sesion.user) }, error: null };
     },
     async signOut() { await espera(); sesion = null; avisar('SIGNED_OUT'); return { error: null }; },
+    // Recuperar contraseña: como en Supabase, responde igual exista o no la cuenta,
+    // y no deja pedir otro enlace para el mismo correo antes de 60 segundos.
+    async resetPasswordForEmail(email) {
+      await espera();
+      const k = String(email).toLowerCase(), ahora = Date.now();
+      if (enlaces[k] && ahora - enlaces[k] < 60000) return { data: null, error: { name: 'AuthApiError', message: 'For security purposes, you can only request this after 60 seconds.', status: 429 } };
+      enlaces[k] = ahora;
+      return { data: {}, error: null };
+    },
+    // Solo en la demostración: simula abrir el enlace que llegó al correo.
+    async abrirEnlaceDemo(email) {
+      await espera();
+      const k = String(email).toLowerCase(), u = usuarios.find((x) => x.email === k);
+      if (!u || u.banned || !enlaces[k]) return false;
+      delete enlaces[k];
+      sesion = { access_token: 'demo-' + u.id, user: usuarioPublico(u) };
+      avisar('PASSWORD_RECOVERY');
+      return true;
+    },
     onAuthStateChange(cb) { oyentes.push(cb); return { data: { subscription: { unsubscribe() { const i = oyentes.indexOf(cb); if (i >= 0) oyentes.splice(i, 1); } } } }; },
   };
 

@@ -14,7 +14,12 @@
   const CFG = window.INTRANET_CONFIG || {};
   // Mientras config.js no tenga el proyecto real, la página muestra «en preparación».
   const SIN_CONFIGURAR = !CFG.supabaseUrl || /PENDIENTE/.test(CFG.supabaseUrl + CFG.supabaseKey);
-  const sb = window.supabase && !SIN_CONFIGURAR ? window.supabase.createClient(CFG.supabaseUrl, CFG.supabaseKey) : null;
+  // El enlace de recuperación llega con los datos en el #: se leen antes de que supabase-js los consuma.
+  const ENLACE = (function () {
+    const h = new URLSearchParams((location.hash || '').replace(/^#/, ''));
+    return { recuperar: h.get('type') === 'recovery', error: h.get('error_code') || h.get('error') || '' };
+  })();
+  const sb = window.supabase && !SIN_CONFIGURAR ? window.supabase.createClient(CFG.supabaseUrl, CFG.supabaseKey, { auth: { flowType: 'implicit' } }) : null;
   const VERSION = (function () {
     try { return new URL(document.currentScript.src, location.href).searchParams.get('v') || ''; } catch (e) { return ''; }
   })();
@@ -151,7 +156,7 @@
 
   // ---------- Estado ----------
   const S = {
-    pantalla: 'cargando', error: '', correoLogin: '', claveVoluntaria: false, ocupado: '',
+    pantalla: 'cargando', error: '', correoLogin: '', claveVoluntaria: false, ocupado: '', recuperacion: false, olvido: { enviado: false, correo: '' },
     usuario: null, perfil: null, sedes: [], areas: [], turnos: [], herramientas: [], personas: [], config: {}, revisores: [],
     view: 'inicio', menu: false, cargandoVista: false, errorVista: '',
     hoy: null,
@@ -247,7 +252,7 @@
     if (/invalid login credentials/i.test(m)) return 'Correo o contraseña incorrectos.';
     if (/banned/i.test(m)) return 'Tu cuenta está desactivada. Habla con la administración.';
     if (/failed to fetch|networkerror|load failed|network request failed/i.test(m) || (e && e.name === 'AuthRetryableFetchError')) return 'No hay conexión con el servidor.';
-    if (/should be different/i.test(m)) return 'La contraseña nueva debe ser distinta de la temporal.';
+    if (/should be different/i.test(m)) return 'La contraseña nueva debe ser distinta de la anterior.';
     if (/row-level security|permission denied/i.test(m)) return 'No tienes permiso para hacer esto.';
     if (/duplicate key/i.test(m)) return 'Ese registro ya existe.';
     if (/violates check constraint/i.test(m)) return 'Revisa los datos: hay un valor que no es válido.';
@@ -310,6 +315,7 @@
   function vista() {
     switch (S.pantalla) {
       case 'login': return loginView();
+      case 'olvido': return olvidoView();
       case 'sinperfil': return sinPerfilView();
       case 'clave': return claveView();
       case 'datos': return datosView();
@@ -328,7 +334,12 @@
     render();
     try {
       const { data } = await sb.auth.getSession();
-      if (!data || !data.session) { S.pantalla = 'login'; render(); return; }
+      if (ENLACE.recuperar || ENLACE.error) limpiarEnlace();
+      if (ENLACE.recuperar && data && data.session) { S.recuperacion = true; await cargarUsuario(data.session.user); return; }
+      if (!data || !data.session) {
+        if (ENLACE.error) { S.pantalla = 'olvido'; S.olvido = { enviado: false, correo: S.correoLogin || '' }; S.error = 'El enlace venció o ya se usó. Pide uno nuevo.'; render(); return; }
+        S.pantalla = 'login'; render(); return;
+      }
       await cargarUsuario(data.session.user);
     } catch (e) {
       S.pantalla = 'login';
@@ -342,6 +353,7 @@
     const perfil = await q(sb.from('perfiles').select('*').eq('id', user.id).maybeSingle());
     if (!perfil || !perfil.activo) { S.pantalla = 'sinperfil'; render(); return; }
     S.perfil = perfil;
+    if (S.recuperacion) { S.pantalla = 'clave'; foco = 'input[name=clave]'; render(); return; }
     if (user.user_metadata && user.user_metadata.debe_cambiar_contrasena) { S.pantalla = 'clave'; foco = 'input[name=clave]'; render(); return; }
     if (!perfil.acepto_datos) { S.pantalla = 'datos'; render(); return; }
     await entrarApp();
@@ -375,9 +387,12 @@
     try { await sb.auth.signOut(); } catch (e) { /* igual se limpia */ }
     reiniciar();
   }
+  function limpiarEnlace() {
+    try { history.replaceState(null, '', location.pathname + location.search); } catch (e) { /* nada */ }
+  }
   function reiniciar() {
     Object.assign(S, {
-      pantalla: 'login', error: '', usuario: null, perfil: null, view: 'inicio', menu: false, hoy: null, asistencia: null, lb: null,
+      pantalla: 'login', error: '', recuperacion: false, olvido: { enviado: false, correo: '' }, usuario: null, perfil: null, view: 'inicio', menu: false, hoy: null, asistencia: null, lb: null,
       malla: { lunes: '', sede: 'todas', vista: 'semana', filas: [], base: [], edit: null, guardando: false },
       com: { lista: [], imgs: [], lect: [], filtro: 'todos', q: '', borrador: { confirmar: true }, archivos: [], borrar: null },
       sol: { lista: [], adj: [], tipo: 'vacaciones', borrador: {}, archivos: [], cancelar: null, coment: {} },
@@ -419,17 +434,42 @@
           <input name="clave" type="password" autocomplete="current-password" required></label>
         ${S.error ? `<p class="err" role="alert">${ico('alerta')}${esc(S.error)}</p>` : ''}
         <button class="btn block" type="submit"${ocupado('login')}>${S.ocupado === 'login' ? 'Entrando…' : 'Entrar'}</button>
-        <p class="hint">¿Olvidaste tu contraseña? Pídele a la administración que la restablezca.</p>
+        <button class="btn txt block" type="button" data-accion="olvido">¿Olvidaste tu contraseña?</button>
         ${CFG.demo ? '' : '<p class="hint">¿Aún no tienes cuenta? Mira cómo funciona en la <a href="pruebas/demo.html">demostración</a>.</p>'}
       </form>`);
   }
 
+  function olvidoView() {
+    const O = S.olvido;
+    if (O.enviado) {
+      return marcoAcceso(`<div class="card login-card">
+        <span class="eyebrow">Recuperar contraseña</span>
+        <h2>Revisa tu correo</h2>
+        <p class="hint">Si <b>${esc(O.correo)}</b> tiene una cuenta activa en la intranet, en unos minutos te llega un correo de ${esc(MARCA.nombre)} con un enlace para crear una contraseña nueva.</p>
+        <p class="hint">El enlace sirve una sola vez y vence en 1 hora. Si no lo ves, revisa la carpeta de spam o de promociones.</p>
+        ${CFG.demo ? '<button class="btn block" type="button" data-accion="abrirEnlaceDemo">Demostración: abrir el enlace del correo</button>' : ''}
+        <button class="btn ${CFG.demo ? 'txt' : ''} block" type="button" data-accion="volverLogin">Volver a ingresar</button>
+      </div>`);
+    }
+    return marcoAcceso(`<form class="card login-card" data-form="olvido" novalidate>
+        <span class="eyebrow">Recuperar contraseña</span>
+        <h2>¿Olvidaste tu contraseña?</h2>
+        <p class="hint">Escribe tu correo corporativo y te enviamos un enlace seguro para crear una nueva.</p>
+        <label class="field"><span>Correo corporativo</span>
+          <input name="correo" type="email" autocomplete="username" inputmode="email" placeholder="${esc(MARCA.correoEjemplo)}" value="${esc(O.correo)}" required></label>
+        ${S.error ? `<p class="err" role="alert">${ico('alerta')}${esc(S.error)}</p>` : ''}
+        <button class="btn block" type="submit"${ocupado('olvido')}>${S.ocupado === 'olvido' ? 'Enviando…' : 'Enviarme el enlace'}</button>
+        <button class="btn txt block" type="button" data-accion="volverLogin">Volver a ingresar</button>
+      </form>`);
+  }
+
   function claveView() {
-    const voluntaria = S.claveVoluntaria;
+    const voluntaria = S.claveVoluntaria, recuperacion = S.recuperacion;
+    const saludo = `Hola, ${esc(primerNombre(P().nombre))}.`;
     return marcoAcceso(`<form class="card login-card" data-form="clave" novalidate>
-        <span class="eyebrow">${voluntaria ? 'Tu cuenta' : 'Primer ingreso'}</span>
-        <h2>${voluntaria ? 'Cambia tu contraseña' : 'Crea tu contraseña'}</h2>
-        <p class="hint">${voluntaria ? 'Escribe la contraseña nueva dos veces.' : `Hola, ${esc(primerNombre(P().nombre))}. La contraseña temporal solo sirve una vez: crea una propia de 8 caracteres o más.`}</p>
+        <span class="eyebrow">${recuperacion ? 'Recuperar contraseña' : voluntaria ? 'Tu cuenta' : 'Primer ingreso'}</span>
+        <h2>${voluntaria ? 'Cambia tu contraseña' : recuperacion ? 'Crea una contraseña nueva' : 'Crea tu contraseña'}</h2>
+        <p class="hint">${voluntaria ? 'Escribe la contraseña nueva dos veces.' : recuperacion ? `${saludo} Escribe tu contraseña nueva dos veces: 8 caracteres o más.` : `${saludo} La contraseña temporal solo sirve una vez: crea una propia de 8 caracteres o más.`}</p>
         <label class="field"><span>Contraseña nueva</span><input name="clave" type="password" autocomplete="new-password" minlength="8" required></label>
         <label class="field"><span>Repítela</span><input name="clave2" type="password" autocomplete="new-password" minlength="8" required></label>
         ${S.error ? `<p class="err" role="alert">${ico('alerta')}${esc(S.error)}</p>` : ''}
@@ -1889,6 +1929,20 @@
         case 'recargar': location.reload(); return;
         case 'salir': await salir(); return;
         case 'cambiarClave': S.menu = false; S.claveVoluntaria = true; S.error = ''; S.pantalla = 'clave'; foco = 'input[name=clave]'; render(); return;
+        case 'olvido': {
+          const escrito = document.querySelector('form[data-form=login] input[name=correo]');
+          if (escrito) S.correoLogin = escrito.value.trim().toLowerCase();
+        }
+          S.error = ''; S.olvido = { enviado: false, correo: S.correoLogin || '' }; S.pantalla = 'olvido'; foco = 'input[name=correo]'; render(); return;
+        case 'volverLogin': S.error = ''; S.correoLogin = S.olvido.correo || S.correoLogin; S.pantalla = 'login'; foco = 'input[name=clave]'; render(); return;
+        case 'abrirEnlaceDemo': {
+          const ok = CFG.demo && sb.auth.abrirEnlaceDemo && await sb.auth.abrirEnlaceDemo(S.olvido.correo);
+          if (!ok) { toast('En la demostración, usa el correo de una de las cuentas de ejemplo.', 'bad'); return; }
+          const { data } = await sb.auth.getSession();
+          S.recuperacion = true;
+          await cargarUsuario(data.session.user);
+          return;
+        }
         case 'cancelarClave': S.claveVoluntaria = false; S.error = ''; S.pantalla = 'app'; render(); return;
         case 'aceptarDatos': {
           let aceptado = false;
@@ -2047,6 +2101,29 @@
     if (d.guia) { const n = document.getElementById('guia-' + d.guia); if (n) n.scrollIntoView({ behavior: 'smooth', block: 'start' }); }
   });
 
+  async function pedirEnlace(correo) {
+    S.olvido.correo = correo;
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(correo)) { S.error = 'Escribe tu correo corporativo completo.'; foco = 'input[name=correo]'; render(); return; }
+    S.error = '';
+    S.ocupado = 'olvido';
+    render();
+    try {
+      // La respuesta es la misma exista o no la cuenta: así nadie puede averiguar qué correos están registrados.
+      const { error } = await sb.auth.resetPasswordForEmail(correo, { redirectTo: location.origin + location.pathname });
+      if (error) throw error;
+      S.ocupado = '';
+      S.olvido.enviado = true;
+      render();
+    } catch (e) {
+      S.ocupado = '';
+      const m = String((e && e.message) || '');
+      S.error = (e && e.status === 429) || /rate limit|seconds|security purposes/i.test(m)
+        ? 'Ya pediste un enlace hace muy poco. Espera un minuto y vuelve a intentarlo.'
+        : errorTexto(e);
+      render();
+    }
+  }
+
   async function iniciarSesion(correo, clave) {
     S.correoLogin = correo;
     if (!correo || !clave) { S.error = 'Escribe tu correo y tu contraseña.'; foco = correo ? 'input[name=clave]' : 'input[name=correo]'; render(); return; }
@@ -2075,6 +2152,7 @@
       await iniciarSesion(f.correo.value.trim().toLowerCase(), f.clave.value);
       return;
     }
+    if (tipo === 'olvido') { await pedirEnlace(f.correo.value.trim().toLowerCase()); return; }
     if (tipo === 'clave') {
       const a = f.clave.value, b = f.clave2.value;
       if (a.length < 8) { S.error = 'La contraseña debe tener 8 caracteres o más.'; foco = 'input[name=clave]'; render(); return; }
@@ -2087,6 +2165,7 @@
         if (error) throw error;
         S.usuario = (data && data.user) || S.usuario;
         S.ocupado = '';
+        if (S.recuperacion) { S.recuperacion = false; toast('Listo: ya puedes entrar con tu contraseña nueva.'); }
         if (S.claveVoluntaria) { S.claveVoluntaria = false; S.pantalla = 'app'; render(); toast('Contraseña actualizada.'); return; }
         if (!S.perfil.acepto_datos) { S.pantalla = 'datos'; render(); return; }
         await entrarApp();

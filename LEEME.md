@@ -80,7 +80,7 @@ Como Caminos es un cliente nuevo, se fusionaron las del manual (el manual lo per
 
 - **Permisos en Postgres** (`supabase/pruebas/correr.sh`): 124 reglas en verde. Marcas solo con `marcar()`, orden de los pasos, bloqueo por IP, malla por sede, supervisor sin poderes de gerencia, comunicados por destinatario, solicitudes por revisor, ausencias aprobadas, `anon` sin acceso.
 - **Interfaz** (`pruebas/recorrido.js`): 4 roles × 2 anchos (1300 px y 390 px), cada pestaña sin desborde horizontal y sin errores de página.
-- **Acciones** (`pruebas/acciones.js`): 54 verificaciones, entre ellas que el informe cuadra con un cálculo manual independiente y que el CSV sale con BOM, `;` y `\r\n`.
+- **Acciones** (`pruebas/acciones.js`): 61 verificaciones (incluye recuperar contraseña), entre ellas que el informe cuadra con un cálculo manual independiente y que el CSV sale con BOM, `;` y `\r\n`.
 
 ```bash
 # Postgres local (usuario postgres)
@@ -91,6 +91,15 @@ node pruebas/acciones.js
 ```
 
 Lo que el simulador **no** cubre: los permisos de `service_role` y la Edge Function real. Crear una cuenta en el Supabase real de Caminos es parte obligatoria de la prueba final (manual §13.4).
+
+## 3b. Recuperar contraseña
+
+En la entrada hay un botón **«¿Olvidaste tu contraseña?»**. La persona escribe su correo y Supabase le envía un enlace de un solo uso que vence en 1 hora; al abrirlo, la intranet le pide la contraseña nueva dos veces y entra.
+
+- La respuesta es la misma exista o no la cuenta (nadie puede averiguar qué correos están registrados). Las cuentas desactivadas no pueden usar el enlace.
+- Un enlace vencido o ya usado lleva a pedir uno nuevo. Supabase no deja pedir otro para el mismo correo antes de 60 segundos.
+- El enlace vuelve a la dirección de la intranet, que está en *Site URL* y en *Redirect URLs*.
+- **Correo de salida:** mientras Supabase use su correo de prueba, solo envía a los miembros de la organización de Supabase y máximo 2 por hora. Para el equipo hay que configurar SMTP propio (Google Workspace: `smtp.gmail.com`, puerto 465, con una contraseña de aplicación) en *Authentication → Emails → SMTP Settings*. Después se pega la plantilla `supabase/correos/recuperar_contrasena.html` y se sube el límite de correos por hora.
 
 ## 4. Pendientes y decisiones
 
@@ -103,6 +112,7 @@ Decisiones tomadas (13 de octubre de 2026):
 | # | Qué falta | Dónde va |
 | --- | --- | --- |
 | 1 | **Número de RNT** para el pie de página (llega después) | `MARCA.registro` en `app.js` |
+| 1b | **SMTP propio** para que los correos de recuperación lleguen a todo el equipo | Supabase → Authentication → Emails |
 | 2 | **Personas**: nombre, correo corporativo, área y rol | Pantalla Equipo |
 | 3 | Tolerancias y meta de puntualidad (hoy 5 min, 5 min y 95 %) | Tabla `configuracion` |
 | 4 | ¿Se usarán las solicitudes? ¿Quién las revisa? | Pantalla Solicitudes (gerencia) |
