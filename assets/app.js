@@ -47,12 +47,16 @@
     logo: 'assets/logo-caminos.svg',
     logoBlanco: 'assets/logo-caminos-blanco.svg',
     textoClave: 'Intranet Caminos',
-    // PENDIENTE: reemplazar por el texto legal de Caminos (Ley 1581 de 2012) y poner false.
-    datosPendiente: true,
+    // Texto de autorización (Ley 1581 de 2012). Conviene que lo revise un asesor legal.
+    datosPendiente: false,
     datos: [
-      'En cumplimiento de la Ley 1581 de 2012 y del Decreto 1377 de 2013, autorizo a Caminos, como responsable del tratamiento, para recolectar, almacenar, usar y suprimir mis datos personales: nombre, correo corporativo, área, sede, horario, registros de entrada y salida, solicitudes y sus soportes.',
-      'La finalidad es administrar la jornada laboral, la comunicación interna y los procesos de talento humano de la agencia. Los soportes de incapacidad pueden contener datos sensibles de salud; entregarlos es opcional y solo los ven la gerencia y las personas que ella asigne.',
-      'Puedo conocer, actualizar, rectificar y suprimir mis datos, y revocar esta autorización, escribiendo a la gerencia de Caminos.',
+      'En cumplimiento de la Ley 1581 de 2012, el Decreto 1377 de 2013 (compilado en el Decreto 1074 de 2015) y demás normas sobre protección de datos personales, autorizo de manera previa, expresa e informada a Caminos, agencia de viajes con domicilio en la Calle 79 # 16a-20, Oficina 507, Bogotá, como responsable del tratamiento, para recolectar, almacenar, usar, consultar, actualizar y suprimir los datos personales que entrego o que se generan con el uso de esta intranet.',
+      'Datos que se tratan: nombre, correo corporativo, área, sede, rol, horario y turnos asignados, registros de entrada, almuerzo y salida (fecha, hora y dirección IP desde la que se marca), confirmaciones de lectura de comunicados, y solicitudes de vacaciones, permisos e incapacidades con sus soportes.',
+      'Finalidades: administrar la jornada laboral, la asistencia y la puntualidad; programar horarios; enviar comunicados internos; tramitar vacaciones, permisos e incapacidades; generar informes para la gerencia, y cumplir las obligaciones laborales y legales de la agencia. Los datos no se usan con fines comerciales ni se venden a terceros.',
+      'Datos sensibles: los soportes de incapacidad pueden contener información de salud, que la ley considera sensible. No estoy obligado(a) a entregarla ni a autorizar su tratamiento; si la entrego, solo la consultan la gerencia y las personas que ella designe para revisar incapacidades, y únicamente para tramitar la novedad.',
+      'Almacenamiento: la información se guarda en servidores de Supabase, proveedor tecnológico ubicado en Estados Unidos, que actúa como encargado del tratamiento con acceso restringido y conexión cifrada. Autorizo esta transmisión internacional de datos para las finalidades descritas. Los datos se conservan mientras dure la relación laboral y durante el tiempo que exijan las normas laborales, contables y tributarias.',
+      'Mis derechos: conocer, actualizar y rectificar mis datos; pedir prueba de esta autorización; saber qué uso se les ha dado; revocar la autorización o pedir la supresión cuando no exista un deber legal o contractual de conservarlos, y presentar quejas ante la Superintendencia de Industria y Comercio. Las consultas se responden en máximo 10 días hábiles y los reclamos en máximo 15 días hábiles.',
+      'Para ejercerlos puedo escribir a directoroperaciones@agenciacaminos.com.co o dirigirme a la gerencia de Caminos en la dirección indicada. Al tocar «Acepto» declaro que leí esta autorización y que la otorgo de forma libre; la intranet guarda la fecha en que la acepté.',
     ],
   };
 

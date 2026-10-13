@@ -92,20 +92,21 @@ node pruebas/acciones.js
 
 Lo que el simulador **no** cubre: los permisos de `service_role` y la Edge Function real. Crear una cuenta en el Supabase real de Caminos es parte obligatoria de la prueba final (manual §13.4).
 
-## 4. Pendientes que debe entregar Caminos
+## 4. Pendientes y decisiones
 
-| # | Qué | Dónde va |
+Decisiones tomadas (13 de octubre de 2026):
+
+- **Texto de tratamiento de datos:** redactado (Ley 1581 de 2012): responsable, datos, finalidades, datos sensibles de incapacidad, almacenamiento en Supabase (Estados Unidos), derechos y contacto. Está en `MARCA.datos`. Conviene que lo revise un asesor legal.
+- **Sedes y áreas:** solo Bogotá, con Gerencia, Ventas, Operaciones y Contabilidad. No hay más.
+- **Horarios y turnos:** los carga la dirección de operaciones desde la pantalla Malla. Los 5 turnos de ejemplo (M, T, S, D, V) se pueden editar o eliminar.
+
+| # | Qué falta | Dónde va |
 | --- | --- | --- |
-| 1 | **Texto legal de tratamiento de datos** (Ley 1581 de 2012). El que hay es de ejemplo y la pantalla lo avisa | `MARCA.datos` en `app.js`, y `datosPendiente: false` |
-| 2 | **Número de RNT** para el pie de página | `MARCA.registro` en `app.js` |
-| 3 | ¿Hay otras sedes además de Bogotá? | `003_datos_iniciales.sql` |
-| 4 | Lista definitiva de **áreas** (hoy: Gerencia, Ventas, Operaciones, Contabilidad) | `003_datos_iniciales.sql` |
-| 5 | **Personas**: nombre, correo corporativo, área y rol. Quién es gerencia, quién lidera la sede, quién administra cuentas (rol Supervisor) | Pantalla Equipo |
-| 6 | **Horario de cada persona** (PDF u hoja): entrada, salida y almuerzo por día | Turnos y horario fijo (manual §4.7) |
-| 7 | Tolerancias y meta de puntualidad (hoy 5 min, 5 min y 95 %) | Tabla `configuracion` |
-| 8 | ¿Se usarán las solicitudes? ¿Quién las revisa? | Pantalla Solicitudes (gerencia) |
-| 9 | IP pública de la oficina (fase final, en sitio) | `sedes.ips_oficina` + `validar_ip` |
-| 10 | Cuenta dueña que no se comparte, para Supabase y GitHub | Puesta en marcha |
+| 1 | **Número de RNT** para el pie de página (llega después) | `MARCA.registro` en `app.js` |
+| 2 | **Personas**: nombre, correo corporativo, área y rol | Pantalla Equipo |
+| 3 | Tolerancias y meta de puntualidad (hoy 5 min, 5 min y 95 %) | Tabla `configuracion` |
+| 4 | ¿Se usarán las solicitudes? ¿Quién las revisa? | Pantalla Solicitudes (gerencia) |
+| 5 | IP pública de la oficina (fase final, en sitio) | `sedes.ips_oficina` + `validar_ip` |
 
 Otros puntos para confirmar:
 
