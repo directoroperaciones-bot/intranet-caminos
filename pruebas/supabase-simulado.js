@@ -76,8 +76,9 @@
       { id: 3, nombre: 'Cotizador OMNIAXIS', descripcion: 'Plantilla maestra del cotizador.', icono: 'cotizador', pie: 'Google Sheets', url: 'https://docs.google.com/spreadsheets/d/1n_wPCi90RUk69Yiclf-Uc1viJZIWQs7Qc1Z5k1ZUWM0/edit?gid=131584006#gid=131584006', orden: 3, areas_visibles: null, activo: true },
     ],
     comunicados: [], comunicado_imagenes: [], comunicado_lecturas: [], solicitudes: [], solicitud_adjuntos: [], revisores: [],
+    grupos: [],
   };
-  const SERIAL = ['sedes', 'areas', 'turnos', 'malla_historial', 'marcas', 'herramientas', 'comunicados', 'comunicado_imagenes', 'solicitudes', 'solicitud_adjuntos'];
+  const SERIAL = ['sedes', 'areas', 'turnos', 'malla_historial', 'marcas', 'herramientas', 'comunicados', 'comunicado_imagenes', 'solicitudes', 'solicitud_adjuntos', 'grupos'];
   const CLAVES = {
     malla: ['persona_id', 'fecha'], horario_base: ['persona_id', 'dia'], comunicado_lecturas: ['comunicado_id', 'persona_id'],
     revisores: ['persona_id'], configuracion: ['clave'], perfiles: ['id'], turnos: ['sede_id', 'codigo'], marcas: ['persona_id', 'fecha', 'tipo'],
@@ -202,6 +203,20 @@
     db.marcas.forEach((x, i) => { x.id = i + 1; });
   })();
 
+  // Grupos de ejemplo (ficticios), con fechas alrededor de hoy
+  [
+    ['Peregrinación Fátima y Lourdes', 'Portugal y Francia', 20, 32, 28, 'carolina', 'confirmado', 'Aéreos Bogotá–Lisboa, hoteles 4★, traslados, guía en español y misas diarias.'],
+    ['Colegio San José · Grado 11', 'Cartagena', 5, 9, 42, 'daniela', 'documentacion', 'Bus, hotel todo incluido, city tour e Islas del Rosario.'],
+    ['Semana Santa en Tierra Santa', 'Israel y Jordania', 150, 162, 30, 'carolina', 'cotizando', 'Aéreos, hoteles, guía y entradas.'],
+    ['Empresa Andina · incentivo', 'San Andrés', -2, 3, 18, 'santiago', 'en_viaje', 'Aéreos, hotel y actividades.'],
+    ['Pasadía Chiquinquirá', 'Chiquinquirá', -20, -20, 35, 'valentina', 'finalizado', 'Bus, almuerzo y visita a la basílica.'],
+    ['Jubilados Club Social', 'Eje Cafetero', 45, 50, 22, 'felipe', 'cotizando', ''],
+    ['Grupo familiar Gómez', '', null, null, null, null, 'cotizando', ''],
+  ].forEach(([nombre, destino, a, b, pax, resp, estado, alcance], i) => db.grupos.push({
+    id: i + 1, nombre, destino, salida: a == null ? null : sumarDias(HOY, a), regreso: b == null ? null : sumarDias(HOY, b), pasajeros: pax,
+    responsable_id: resp ? ID[resp] : null, alcance, notas: '', estado, creado_por: ID.carolina, creado: sumarDias(HOY, -30) + 'T15:00:00Z',
+    actualizado: sumarDias(HOY, -2) + 'T15:00:00Z', actualizado_por: ID.carolina,
+  }));
   SERIAL.forEach((t) => { sigId[t] = db[t].reduce((m, r) => Math.max(m, r.id || 0), 0) + 1; });
 
   // ---------- Sesión y permisos (equivalentes a las funciones SQL) ----------
@@ -236,6 +251,7 @@
     solicitudes: (r) => puedeVerSolicitud(r.id),
     solicitud_adjuntos: (r) => puedeVerSolicitud(r.solicitud_id),
     revisores: (r) => r.persona_id === uid() || esGerencia(),
+    grupos: () => !!yo(),
     herramientas: (r) => esGerencia() || (r.activo && (!r.areas_visibles || r.areas_visibles.includes((yo() || {}).area_id))),
   };
   // Reglas de escritura (USING y WITH CHECK)
@@ -256,6 +272,7 @@
     revisores: () => esGerencia(),
     perfiles: (r, op) => esAdmin() || (op === 'update' && gestionaCuentas() && r.id !== uid() && r.rol === 'colaborador' && !r.es_admin),
     malla_historial: () => false,
+    grupos: () => !!yo(),
   };
   const DEFECTOS = {
     comunicados: () => ({ cuerpo: '', destino: 'todos', destino_id: null, requiere_confirmacion: true, fijado: false, creado: ahoraISO() }),
@@ -266,12 +283,14 @@
     revisores: () => ({ sede_id: null, nivel: 'aprobar' }),
     horario_base: () => ({}),
     configuracion: () => ({ actualizado: ahoraISO() }),
+    grupos: () => ({ destino: '', salida: null, regreso: null, pasajeros: null, responsable_id: null, alcance: '', notas: '', estado: 'cotizando', creado_por: uid(), creado: ahoraISO(), actualizado: ahoraISO(), actualizado_por: uid() }),
   };
   function revisarRestricciones(tabla, r) {
     if (tabla === 'turnos' && ((!r.entrada) !== (!r.salida) || (!r.salida_almuerzo) !== (!r.regreso_almuerzo))) return err('new row for relation "turnos" violates check constraint', '23514');
     if (tabla === 'solicitudes' && (r.hasta < r.desde || (!r.hora_desde) !== (!r.hora_hasta))) return err('new row for relation "solicitudes" violates check constraint', '23514');
     if (tabla === 'comunicados' && (!r.titulo || r.titulo.length > 140)) return err('new row for relation "comunicados" violates check constraint', '23514');
     if (tabla === 'revisores' && (!r.tipos || !r.tipos.length)) return err('new row for relation "revisores" violates check constraint', '23514');
+    if (tabla === 'grupos' && (!String(r.nombre || '').trim() || (r.salida && r.regreso && r.regreso < r.salida) || !['cotizando', 'confirmado', 'documentacion', 'en_viaje', 'finalizado'].includes(r.estado))) return err('new row for relation "grupos" violates check constraint', '23514');
     return null;
   }
   const mismaClave = (tabla, a, b) => (CLAVES[tabla] || ['id']).every((k) => String(a[k]) === String(b[k]));
@@ -390,7 +409,7 @@
           const e = revisarRestricciones(tabla, nueva);
           if (e) return { data: null, error: e };
         }
-        objetivo.forEach((r) => { const antes = clonar(r); Object.assign(r, clonar(this.datos)); if (tabla === 'malla') historial('update', antes, r); });
+        objetivo.forEach((r) => { const antes = clonar(r); Object.assign(r, clonar(this.datos)); if (tabla === 'grupos') Object.assign(r, { actualizado: ahoraISO(), actualizado_por: uid() }); if (tabla === 'malla') historial('update', antes, r); });
         return this.devolver ? this.resultado(objetivo) : { data: null, error: null };
       }
       if (this.op === 'delete') {
@@ -407,6 +426,10 @@
   // ---------- RPC ----------
   const NOMBRES_PASO = { entrada: 'la entrada', salida_almuerzo: 'la salida a almorzar', regreso_almuerzo: 'el regreso de almuerzo', salida: 'la salida' };
   const RPC = {
+    nueva_clave_calendario() {
+      if (!esAdmin()) throw err('Solo la administración puede crear la clave del calendario.');
+      return Array.from({ length: 48 }, () => '0123456789abcdef'[Math.floor(Math.random() * 16)]).join('');
+    },
     marcar({ p_tipo }) {
       const p = yo();
       if (!p) throw err('Tu cuenta no está activa.');
