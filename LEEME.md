@@ -77,12 +77,13 @@ Como Caminos es un cliente nuevo, se fusionaron las del manual (el manual lo per
 | `008_ver_solicitudes.sql` | Corrección propia: la regla de lectura de solicitudes usa la fila y no vuelve a consultar la tabla (sin esto, enviar una solicitud fallaba en Supabase real) |
 | `009_grupos.sql` | Propia: grupos de viaje (todo el equipo activo los crea, mueve y borra), clave y lectura para Google Calendar (`calendario/LEEME.md`) |
 | `010_marcar_desde_oficina.sql` | Seguridad propia: IP real del cliente (no se puede falsificar), computadores autorizados y funciones para la pestaña Oficina |
+| `011_conciliacion.sql` | Propia: conciliación de la tarjeta de crédito (solo gerencia): tarjetas, extractos, movimientos del banco, registros de la agencia, categorías, cierre del periodo, soportes privados y tiempo real |
 
 ## 3. Pruebas hechas
 
-- **Permisos en Postgres** (`supabase/pruebas/correr.sh`): 169 reglas en verde (con las 25 de grupos y la clave del calendario, y las 20 de marcar solo desde la oficina). Marcas solo con `marcar()`, orden de los pasos, bloqueo por IP, malla por sede, supervisor sin poderes de gerencia, comunicados por destinatario, solicitudes por revisor, ausencias aprobadas, `anon` sin acceso.
+- **Permisos en Postgres** (`supabase/pruebas/correr.sh`): 201 reglas en verde (con las 25 de grupos y la clave del calendario, las 20 de marcar solo desde la oficina y las 32 de la conciliación de la tarjeta). Marcas solo con `marcar()`, orden de los pasos, bloqueo por IP, malla por sede, supervisor sin poderes de gerencia, comunicados por destinatario, solicitudes por revisor, ausencias aprobadas, `anon` sin acceso.
 - **Interfaz** (`pruebas/recorrido.js`): 4 roles × 2 anchos (1300 px y 390 px), cada pestaña (Grupos en tablero y línea de tiempo) sin desborde horizontal y sin errores de página.
-- **Acciones** (`pruebas/acciones.js`): 98 verificaciones (incluye recuperar contraseña, la pestaña Oficina y crear, mover, arrastrar, editar y borrar grupos), entre ellas que el informe cuadra con un cálculo manual independiente y que el CSV sale con BOM, `;` y `\r\n`.
+- **Acciones** (`pruebas/acciones.js`): 127 verificaciones (incluye recuperar contraseña, la pestaña Oficina, la conciliación de la tarjeta y crear, mover, arrastrar, editar y borrar grupos), entre ellas que el informe cuadra con un cálculo manual independiente y que el CSV sale con BOM, `;` y `\r\n`.
 
 ```bash
 # Postgres local (usuario postgres)
@@ -113,6 +114,17 @@ Dos controles que se activan por separado:
 2. **Solo desde computadores autorizados.** En cada computador de la oficina, la gerencia entra con su cuenta y toca «Autorizar este computador». El navegador guarda una llave de 64 caracteres; en la base solo queda su huella SHA-256 (columna que nadie puede leer). Sin la llave (celulares, computadores personales) no se marca. Cada marca guarda qué computador se usó.
 
 Límites: ninguna página web detecta con certeza un programa de acceso remoto (AnyDesk, TeamViewer, Escritorio remoto). Eso se controla en los computadores: sin esos programas, sin permisos de administrador para los asesores y con esos sitios bloqueados en el router.
+
+## 3d. Conciliación de la tarjeta de crédito (pestaña Tarjeta, gerencia)
+
+Proceso de cada mes: crear el extracto (datos de su primera página), importar los movimientos (filas pegadas desde Excel o el CSV del banco), cruzarlos con los gastos que la agencia registró, clasificar cada cargo (categoría y grupo de viaje), adjuntar la factura, marcar lo no reconocido (reclamo al banco) o personal (cobro a la persona), comprobar el cuadre y cerrar.
+
+- **Indicadores arriba**: avance, por conciliar, sin soporte, no reconocidos, intereses y cargos, y cuadre con el extracto (saldo anterior + cargos − pagos = total a pagar). Cada indicador filtra la tabla.
+- **Cruce automático**: mismo valor y hasta 5 días de diferencia; los pagos y los cargos del banco (intereses, cuota de manejo, comisiones) se concilian solos con «Conciliar sugeridos».
+- **Importación**: detecta columnas por su nombre (o por su contenido si no hay encabezado), separador (tabulador, `;` o `,`), formatos de fecha (`03/10/2026`, `2026-10-03`, `3-oct-2026`) y de pesos (`$ 1.234.567`, `1,234,567.89`, `(1.000)`), el tipo de movimiento y los repetidos. CSV en UTF-8 o Latin-1.
+- **Tiempo real**: la pantalla se suscribe a los cambios de `tc_movimientos`, `tc_registros` y `tc_extractos` (publicación `supabase_realtime`); un cambio hecho en otro equipo aparece sin recargar.
+- **Cierre**: solo sin pendientes. Cerrado, la base no deja editar nada (disparador), salvo reabrir. Las facturas van al depósito privado `conciliacion`, con enlaces firmados de 1 hora.
+- De la tarjeta solo se guardan los **últimos 4 dígitos**.
 
 ## 4. Pendientes y decisiones
 

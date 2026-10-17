@@ -13,3 +13,4 @@ for f in supabase/migrations/*.sql; do correr "$f"; done
 correr supabase/pruebas/01_permisos.sql
 correr supabase/pruebas/02_aprobaciones.sql
 correr supabase/pruebas/03_grupos.sql
+correr supabase/pruebas/04_conciliacion.sql

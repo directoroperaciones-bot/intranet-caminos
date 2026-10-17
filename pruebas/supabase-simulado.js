@@ -77,11 +77,12 @@
     ],
     comunicados: [], comunicado_imagenes: [], comunicado_lecturas: [], solicitudes: [], solicitud_adjuntos: [], revisores: [],
     grupos: [], equipos: [],
+    tc_tarjetas: [], tc_categorias: [], tc_extractos: [], tc_registros: [], tc_movimientos: [],
   };
   // IP con la que «llega» el navegador de la demostración y llaves de los computadores autorizados
   const IP_DEMO = '190.25.14.7';
   const llavesEquipo = {};
-  const SERIAL = ['sedes', 'areas', 'turnos', 'malla_historial', 'marcas', 'herramientas', 'comunicados', 'comunicado_imagenes', 'solicitudes', 'solicitud_adjuntos', 'grupos', 'equipos'];
+  const SERIAL = ['sedes', 'areas', 'turnos', 'malla_historial', 'marcas', 'herramientas', 'comunicados', 'comunicado_imagenes', 'solicitudes', 'solicitud_adjuntos', 'grupos', 'equipos', 'tc_tarjetas', 'tc_categorias', 'tc_extractos', 'tc_registros', 'tc_movimientos'];
   const CLAVES = {
     malla: ['persona_id', 'fecha'], horario_base: ['persona_id', 'dia'], comunicado_lecturas: ['comunicado_id', 'persona_id'],
     revisores: ['persona_id'], configuracion: ['clave'], perfiles: ['id'], turnos: ['sede_id', 'codigo'], marcas: ['persona_id', 'fecha', 'tipo'],
@@ -221,6 +222,72 @@
     responsable_id: resp ? ID[resp] : null, alcance, notas: '', estado, creado_por: ID.carolina, creado: sumarDias(HOY, -30) + 'T15:00:00Z',
     actualizado: sumarDias(HOY, -2) + 'T15:00:00Z', actualizado_por: ID.carolina,
   }));
+  // Conciliación de la tarjeta (datos ficticios): un periodo cerrado y el actual abierto
+  (function () {
+    ['Tiquetes aéreos', 'Hoteles y alojamiento', 'Operadores y proveedores turísticos', 'Transporte terrestre', 'Publicidad y marketing', 'Software y suscripciones',
+      'Oficina y servicios', 'Atención a clientes', 'Gastos bancarios', 'Impuestos', 'Otros'].forEach((nombre, i) => db.tc_categorias.push({ id: i + 1, nombre, orden: i + 1, activa: true }));
+    const CAT = (n) => db.tc_categorias.find((c) => c.nombre === n).id;
+    db.tc_tarjetas.push({ id: 1, nombre: 'Visa Empresarial', banco: 'Banco de ejemplo', franquicia: 'Visa', ultimos4: '4821', titular: 'Caminos', cupo: 40000000, activa: true, creado: sumarDias(HOY, -200) + 'T15:00:00Z' });
+    // Corte el 15 de cada mes
+    const d = Number(HOY.slice(8, 10));
+    const corte = d >= 15 ? HOY.slice(0, 8) + '15' : sumarDias(HOY.slice(0, 8) + '01', -1).slice(0, 8) + '15';
+    const corteAnt = sumarDias(sumarDias(corte, -20).slice(0, 8) + '01', 14);
+    const desde = sumarDias(corteAnt, 1), desdeAnt = sumarDias(sumarDias(corteAnt, -20).slice(0, 8) + '15', 1);
+    const extracto = (id, a, b, saldoAnt, movs, estado) => {
+      db.tc_extractos.push({ id, tarjeta_id: 1, desde: a, hasta: b, fecha_pago: sumarDias(b, 15), saldo_anterior: saldoAnt, saldo_nuevo: saldoAnt + movs.reduce((t, m) => t + m[2], 0),
+        pago_minimo: null, estado, cerrado_por: estado === 'cerrado' ? ID.andrea : null, cerrado_en: estado === 'cerrado' ? sumarDias(b, 4) + 'T16:00:00Z' : null, notas: '', creado: sumarDias(b, 1) + 'T15:00:00Z', creado_por: ID.andrea });
+      const ex = db.tc_extractos[db.tc_extractos.length - 1];
+      ex.pago_minimo = Math.round(ex.saldo_nuevo * 0.08);
+      return ex;
+    };
+    const reg = (dia, descripcion, valor, cat, grupo, base) => {
+      const r = { id: db.tc_registros.length + 1, tarjeta_id: 1, fecha: sumarDias(base, dia), descripcion, valor, categoria_id: cat ? CAT(cat) : null, grupo_id: grupo || null,
+        responsable_id: ID.andrea, soporte_ruta: null, soporte_nombre: null, creado: sumarDias(base, dia) + 'T17:00:00Z', creado_por: ID.andrea };
+      db.tc_registros.push(r);
+      return r;
+    };
+    const mov = (ex, m, extra) => {
+      const [dia, descripcion, valor, tipo] = m;
+      const fila = Object.assign({ id: db.tc_movimientos.length + 1, extracto_id: ex.id, fecha: sumarDias(ex.desde, dia), descripcion, valor, tipo: tipo || 'compra', moneda: 'COP', valor_origen: null,
+        cuotas: null, autorizacion: String(100000 + db.tc_movimientos.length * 7919).slice(-6), categoria_id: null, grupo_id: null, responsable_id: null, estado: 'pendiente', registro_id: null,
+        soporte_ruta: null, soporte_nombre: null, nota: '', conciliado_por: null, conciliado_en: null, creado: ex.creado }, extra || {});
+      if (fila.estado !== 'pendiente') Object.assign(fila, { conciliado_por: ID.andrea, conciliado_en: sumarDias(ex.hasta, 3) + 'T16:00:00Z' });
+      db.tc_movimientos.push(fila);
+      return fila;
+    };
+    // Periodo anterior, cerrado
+    const antMovs = [[3, 'AVIANCA BOGOTA', 1980000], [9, 'GOOGLE *ADS', 600000], [14, 'PAGO SUCURSAL VIRTUAL', -6200000, 'pago'], [29, 'CUOTA DE MANEJO', 52900, 'cuota_manejo']];
+    const exAnt = extracto(1, desdeAnt, corteAnt, 6200000, antMovs, 'cerrado');
+    const cats = ['Tiquetes aéreos', 'Publicidad y marketing', null, 'Gastos bancarios'];
+    antMovs.forEach((m, i) => mov(exAnt, m, { estado: 'conciliado', categoria_id: cats[i] ? CAT(cats[i]) : null }));
+    // Periodo actual
+    const movs = [
+      [1, 'AVIANCA BOGOTA', 2845000], [3, 'LATAM AIRLINES CO', 1320400], [6, 'HOTEL ESTELAR CARTAGENA', 3150000],
+      [8, 'BOOKING.COM HOTEL', 980000], [10, 'GOOGLE *ADS', 600000], [11, 'FACEBK *ADS', 450000], [13, 'MICROSOFT*365', 98900],
+      [15, 'RESTAURANTE ANDRES DC', 385000], [17, 'TERPEL ESTACION 127', 180000], [19, 'ALIEXPRESS ONLINE', 1250000],
+      [21, 'PAGO SUCURSAL VIRTUAL', -8000000, 'pago'], [29, 'INTERESES CORRIENTES', 214560, 'interes'], [29, 'CUOTA DE MANEJO', 52900, 'cuota_manejo'], [29, 'IVA CUOTA DE MANEJO', 10051, 'comision'],
+    ];
+    const ex = extracto(2, desde, corte, exAnt.saldo_nuevo, movs, 'abierto');
+    ex.fecha_pago = sumarDias(HOY, 6) > ex.hasta ? sumarDias(HOY, 6) : sumarDias(ex.hasta, 15);
+    const g1 = (db.grupos[0] || {}).id, g2 = (db.grupos[1] || {}).id;
+    const r1 = reg(0, 'Tiquetes Bogotá–Lisboa · grupo Fátima', 2845000, 'Tiquetes aéreos', g1, desde);
+    reg(3, 'Tiquetes Cartagena · Colegio San José', 1320400, 'Tiquetes aéreos', g2, desde);
+    reg(4, 'Hotel Cartagena · Colegio San José (anticipo)', 3150000, 'Hoteles y alojamiento', g2, desde);
+    reg(8, 'Booking · hotel Lisboa (USD 245)', 975000, 'Hoteles y alojamiento', g1, desde);
+    reg(9, 'Campaña Google Ads del mes', 600000, 'Publicidad y marketing', null, desde);
+    const r7 = reg(13, 'Licencias Microsoft 365', 98900, 'Software y suscripciones', null, desde);
+    reg(24, 'Seguro de viaje · Assist Card', 420000, 'Operadores y proveedores turísticos', g1, desde);
+    reg(3, 'Tiquetes · Jubilados Club Social', 1640000, 'Tiquetes aéreos', null, corte);
+    movs.forEach((m) => {
+      const extra = {};
+      if (m[1] === 'MICROSOFT*365') Object.assign(extra, { estado: 'conciliado', categoria_id: CAT('Software y suscripciones'), registro_id: r7.id });
+      if (m[1] === 'PAGO SUCURSAL VIRTUAL') extra.estado = 'conciliado';
+      if (m[1] === 'BOOKING.COM HOTEL') Object.assign(extra, { moneda: 'USD', valor_origen: 245 });
+      if (m[1] === 'HOTEL ESTELAR CARTAGENA') extra.cuotas = 3;
+      mov(ex, m, extra);
+    });
+    void r1;
+  })();
   SERIAL.forEach((t) => { sigId[t] = db[t].reduce((m, r) => Math.max(m, r.id || 0), 0) + 1; });
 
   // ---------- Sesión y permisos (equivalentes a las funciones SQL) ----------
@@ -257,6 +324,7 @@
     revisores: (r) => r.persona_id === uid() || esGerencia(),
     grupos: () => !!yo(),
     equipos: (r) => esGerencia() || lideraSede(r.sede_id),
+    tc_tarjetas: () => esGerencia(), tc_categorias: () => esGerencia(), tc_extractos: () => esGerencia(), tc_registros: () => esGerencia(), tc_movimientos: () => esGerencia(),
     herramientas: (r) => esGerencia() || (r.activo && (!r.areas_visibles || r.areas_visibles.includes((yo() || {}).area_id))),
   };
   // Reglas de escritura (USING y WITH CHECK)
@@ -279,6 +347,9 @@
     malla_historial: () => false,
     grupos: () => !!yo(),
     equipos: () => false,
+    tc_tarjetas: () => esGerencia(), tc_categorias: () => esGerencia(), tc_registros: () => esGerencia(),
+    tc_extractos: (r, op) => esGerencia() && (op === 'insert' || r.estado === 'abierto'),
+    tc_movimientos: () => esGerencia(),
   };
   const DEFECTOS = {
     comunicados: () => ({ cuerpo: '', destino: 'todos', destino_id: null, requiere_confirmacion: true, fijado: false, creado: ahoraISO() }),
@@ -289,9 +360,22 @@
     revisores: () => ({ sede_id: null, nivel: 'aprobar' }),
     horario_base: () => ({}),
     configuracion: () => ({ actualizado: ahoraISO() }),
+    tc_tarjetas: () => ({ banco: '', franquicia: '', titular: '', cupo: null, activa: true, creado: ahoraISO() }),
+    tc_extractos: () => ({ saldo_anterior: 0, saldo_nuevo: null, pago_minimo: null, fecha_pago: null, estado: 'abierto', cerrado_por: null, cerrado_en: null, notas: '', creado: ahoraISO(), creado_por: uid() }),
+    tc_registros: () => ({ categoria_id: null, grupo_id: null, responsable_id: null, soporte_ruta: null, soporte_nombre: null, creado: ahoraISO(), creado_por: uid() }),
+    tc_movimientos: () => ({ tipo: 'compra', moneda: 'COP', valor_origen: null, cuotas: null, autorizacion: null, categoria_id: null, grupo_id: null, responsable_id: null, estado: 'pendiente', registro_id: null, soporte_ruta: null, soporte_nombre: null, nota: '', conciliado_por: null, conciliado_en: null, creado: ahoraISO() }),
     grupos: () => ({ destino: '', salida: null, regreso: null, pasajeros: null, responsable_id: null, alcance: '', notas: '', estado: 'cotizando', creado_por: uid(), creado: ahoraISO(), actualizado: ahoraISO(), actualizado_por: uid() }),
   };
+  const tcAbierto = (id) => db.tc_extractos.some((e) => e.id === id && e.estado === 'abierto');
   function revisarRestricciones(tabla, r) {
+    if (tabla === 'tc_movimientos') {
+      if (!tcAbierto(r.extracto_id)) return err('Esta conciliación está cerrada. Reábrela para hacer cambios.');
+      if (!String(r.descripcion || '').trim() || !Number(r.valor)) return err('new row for relation "tc_movimientos" violates check constraint', '23514');
+      if (r.registro_id != null && db.tc_movimientos.some((m) => m.id !== r.id && m.registro_id === r.registro_id)) return err('duplicate key value violates unique constraint', '23505');
+    }
+    if (tabla === 'tc_registros' && (!String(r.descripcion || '').trim() || !Number(r.valor))) return err('new row for relation "tc_registros" violates check constraint', '23514');
+    if (tabla === 'tc_tarjetas' && (!/^[0-9]{4}$/.test(String(r.ultimos4 || '')) || !String(r.nombre || '').trim())) return err('new row for relation "tc_tarjetas" violates check constraint', '23514');
+    if (tabla === 'tc_extractos' && (!r.desde || !r.hasta || r.hasta < r.desde || (r.fecha_pago && r.fecha_pago < r.hasta))) return err('new row for relation "tc_extractos" violates check constraint', '23514');
     if (tabla === 'turnos' && ((!r.entrada) !== (!r.salida) || (!r.salida_almuerzo) !== (!r.regreso_almuerzo))) return err('new row for relation "turnos" violates check constraint', '23514');
     if (tabla === 'solicitudes' && (r.hasta < r.desde || (!r.hora_desde) !== (!r.hora_hasta))) return err('new row for relation "solicitudes" violates check constraint', '23514');
     if (tabla === 'comunicados' && (!r.titulo || r.titulo.length > 140)) return err('new row for relation "comunicados" violates check constraint', '23514');
@@ -305,6 +389,8 @@
     db.malla_historial.push({ id: sigId.malla_historial++, persona_id: r.persona_id, fecha: r.fecha, turno_antes: antes ? antes.turno_id : null, turno_despues: despues ? despues.turno_id : null, cambiado_por: uid(), cambiado_en: ahoraISO() });
   }
   function cascada(tabla, filas) {
+    if (tabla === 'tc_extractos') { const ids = new Set(filas.map((f) => f.id)); db.tc_movimientos = db.tc_movimientos.filter((m) => !ids.has(m.extracto_id)); }
+    if (tabla === 'tc_registros') { const ids = new Set(filas.map((f) => f.id)); db.tc_movimientos.forEach((m) => { if (ids.has(m.registro_id)) m.registro_id = null; }); }
     if (tabla === 'comunicados') {
       const ids = new Set(filas.map((f) => f.id));
       db.comunicado_imagenes = db.comunicado_imagenes.filter((x) => !ids.has(x.comunicado_id));
@@ -314,6 +400,21 @@
       const ids = new Set(filas.map((f) => f.id));
       db.solicitud_adjuntos = db.solicitud_adjuntos.filter((x) => !ids.has(x.solicitud_id));
     }
+  }
+
+  // ---------- Tiempo real: avisa a los canales cuando cambia una tabla ----------
+  const canales = [];
+  function canal() {
+    const c = {
+      handlers: [],
+      on(tipo, filtro, cb) { c.handlers.push({ tabla: filtro && filtro.table, cb }); return c; },
+      subscribe(cb) { canales.push(c); setTimeout(() => cb && cb('SUBSCRIBED'), 0); return c; },
+      unsubscribe() { const i = canales.indexOf(c); if (i >= 0) canales.splice(i, 1); },
+    };
+    return c;
+  }
+  function avisarCambio(tabla) {
+    canales.forEach((c) => c.handlers.forEach((h) => { if (h.tabla === tabla) setTimeout(() => h.cb({ table: tabla }), 0); }));
   }
 
   // ---------- Consultas ----------
@@ -401,10 +502,12 @@
           const e = revisarRestricciones(tabla, fila);
           if (e) return { data: null, error: e };
           if (db[tabla].some((r) => mismaClave(tabla, r, fila))) return { data: null, error: err('duplicate key value violates unique constraint', '23505') };
+          if (tabla === 'tc_movimientos' && fila.estado !== 'pendiente') Object.assign(fila, { conciliado_por: uid(), conciliado_en: ahoraISO() });
           db[tabla].push(fila);
           if (tabla === 'malla') historial('insert', null, fila);
           hechas.push(fila);
         }
+        if (hechas.length) avisarCambio(tabla);
         return this.devolver ? this.resultado(hechas) : { data: null, error: null };
       }
       const objetivo = this.visibles().filter((r) => this.filtros.every((f) => f(r)) && puede(r, this.op));
@@ -415,7 +518,8 @@
           const e = revisarRestricciones(tabla, nueva);
           if (e) return { data: null, error: e };
         }
-        objetivo.forEach((r) => { const antes = clonar(r); Object.assign(r, clonar(this.datos)); if (tabla === 'grupos') Object.assign(r, { actualizado: ahoraISO(), actualizado_por: uid() }); if (tabla === 'malla') historial('update', antes, r); });
+        if (objetivo.length) avisarCambio(tabla);
+        objetivo.forEach((r) => { const antes = clonar(r); Object.assign(r, clonar(this.datos)); if (tabla === 'grupos') Object.assign(r, { actualizado: ahoraISO(), actualizado_por: uid() }); if (tabla === 'malla') historial('update', antes, r); if (tabla === 'tc_movimientos' && antes.estado !== r.estado) Object.assign(r, r.estado === 'pendiente' ? { conciliado_por: null, conciliado_en: null } : { conciliado_por: uid(), conciliado_en: ahoraISO() }); });
         return this.devolver ? this.resultado(objetivo) : { data: null, error: null };
       }
       if (this.op === 'delete') {
@@ -423,6 +527,7 @@
         db[tabla] = db[tabla].filter((r) => !quitar.has(r));
         if (tabla === 'malla') objetivo.forEach((r) => historial('delete', r, null));
         cascada(tabla, objetivo);
+        if (objetivo.length) avisarCambio(tabla);
         return this.devolver ? this.resultado(objetivo) : { data: null, error: null };
       }
       return { data: null, error: err('operación no soportada') };
@@ -471,6 +576,20 @@
     ausencias_aprobadas({ p_desde, p_hasta }) {
       return db.solicitudes.filter((s) => s.estado === 'aprobada' && !s.hora_desde && s.desde <= p_hasta && s.hasta >= p_desde && (s.persona_id === uid() || lideraSede(perfil(s.persona_id).sede_id)))
         .map((s) => ({ persona_id: s.persona_id, tipo: s.tipo, desde: s.desde, hasta: s.hasta }));
+    },
+    cerrar_extracto({ p_id }) {
+      if (!esGerencia()) throw err('Solo la gerencia cierra conciliaciones.');
+      const n = db.tc_movimientos.filter((m) => m.extracto_id === p_id && m.estado === 'pendiente').length;
+      if (n) throw err(`Quedan ${n} movimientos por conciliar.`);
+      const e = db.tc_extractos.find((x) => x.id === p_id && x.estado === 'abierto');
+      if (!e) throw err('La conciliación no existe o ya está cerrada.');
+      return Object.assign(e, { estado: 'cerrado', cerrado_por: uid(), cerrado_en: ahoraISO() });
+    },
+    reabrir_extracto({ p_id }) {
+      if (!esGerencia()) throw err('Solo la gerencia reabre conciliaciones.');
+      const e = db.tc_extractos.find((x) => x.id === p_id && x.estado === 'cerrado');
+      if (!e) throw err('La conciliación no existe o no está cerrada.');
+      return Object.assign(e, { estado: 'abierto', cerrado_por: null, cerrado_en: null });
     },
     mi_ip() { return esGerencia() ? IP_DEMO : null; },
     autorizar_equipo({ p_nombre, p_sede }) {
@@ -574,7 +693,7 @@
       async upload(ruta, archivo) {
         await espera();
         const id = Number(String(ruta).split('/')[0]);
-        const ok = bucket === 'comunicados' ? autorOGerencia(id) : solPendientePropia(id);
+        const ok = bucket === 'conciliacion' ? esGerencia() : bucket === 'comunicados' ? autorOGerencia(id) : solPendientePropia(id);
         if (!ok) return { data: null, error: err('new row violates row-level security policy', '42501') };
         archivos[bucket + '/' + ruta] = URL.createObjectURL(archivo);
         return { data: { path: ruta }, error: null };
@@ -643,6 +762,8 @@
         rpc,
         storage: { from: storage },
         functions: { invoke: invocar },
+        channel: canal,
+        removeChannel(c) { const i = canales.indexOf(c); if (i >= 0) canales.splice(i, 1); return Promise.resolve('ok'); },
       };
     },
   };

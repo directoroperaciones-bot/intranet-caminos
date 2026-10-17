@@ -43,7 +43,7 @@ async function sinDesborde(page, etiqueta) {
 (async () => {
   const browser = await chromium.launch();
   const cuentas = [
-    { correo: 'andrea.rojas@caminos.example', clave: 'gerencia', esperadas: ['inicio', 'grupos', 'malla', 'comunicados', 'asistencia', 'informes', 'solicitudes', 'equipo', 'oficina'] },
+    { correo: 'andrea.rojas@caminos.example', clave: 'gerencia', esperadas: ['inicio', 'grupos', 'malla', 'comunicados', 'asistencia', 'informes', 'solicitudes', 'equipo', 'tarjeta', 'oficina'] },
     { correo: 'carolina.mendez@caminos.example', clave: 'directora', esperadas: ['inicio', 'grupos', 'malla', 'comunicados', 'asistencia', 'informes', 'solicitudes'] },
     { correo: 'julian.torres@caminos.example', clave: 'supervisor', esperadas: ['inicio', 'grupos', 'malla', 'comunicados', 'solicitudes', 'equipo'] },
     { correo: 'daniela.castro@caminos.example', clave: 'colaboradora', esperadas: ['inicio', 'grupos', 'malla', 'comunicados', 'solicitudes'] },

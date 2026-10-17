@@ -374,6 +374,103 @@ let page;
   await page.click('[data-accion=ipQuitar]');
   ok(await avisa('IP quitada'), 'oficina: quita la IP');
 
+  {
+  // ---------- Tarjeta: conciliación de la tarjeta de crédito ----------
+  await ir('tarjeta');
+  const kpi = (f) => page.textContent(`.kpi[data-tcfiltro="${f}"] .kpi-v`);
+  const filaTc = (txt) => page.locator('#lista-tc tr', { hasText: txt });
+  ok((await kpi('todos')).trim() === '14 %', 'tarjeta: indicador de avance (2 de 14 revisados)');
+  await page.waitForSelector('#tc-vivo.on');
+  ok(true, 'tarjeta: conexión en vivo activa');
+  ok((await page.textContent('.kpi[data-tcfiltro="cuadre"]')).includes('Cuadra'), 'tarjeta: el saldo cuadra con el extracto');
+  await filaTc('AVIANCA BOGOTA').locator('[data-accion=tcConciliar]').click();
+  ok(await avisa('Conciliado con el registro'), 'tarjeta: concilia con el registro sugerido (toma su categoría)');
+  await esperar();
+  ok((await kpi('todos')).trim() === '21 %', 'tarjeta: el avance sube al instante');
+  await filaTc('FACEBK').locator('[data-accion=tcConciliar]').click();
+  ok(await avisa('Elige la categoría'), 'tarjeta: sin categoría no concilia');
+  await filaTc('FACEBK').locator('select[data-tccampo$=":categoria_id"]').selectOption({ label: 'Publicidad y marketing' });
+  await esperar();
+  await filaTc('FACEBK').locator('[data-accion=tcConciliar]').click();
+  ok(await avisa('Conciliado.'), 'tarjeta: con categoría, concilia');
+  await esperar();
+  await page.click('[data-accion=tcSugeridos]');
+  ok(await avisa('movimientos conciliados'), 'tarjeta: «Conciliar sugeridos» concilia en bloque');
+  await esperar();
+  await filaTc('ALIEXPRESS').locator('[data-estado=no_reconocido]').click();
+  ok(await avisa('no reconocido'), 'tarjeta: marca un cargo como no reconocido');
+  await esperar();
+  ok((await kpi('no_reconocidos')).replace(/\s/g, ' ').includes('1.250.000'), 'tarjeta: el indicador de no reconocidos suma el cargo');
+  await page.click('.kpi[data-tcfiltro="sin_soporte"]');
+  const sinSop = await page.$$('#lista-tc tr');
+  ok(sinSop.length >= 1 && !(await page.textContent('#lista-tc')).includes('PAGO SUCURSAL'), `tarjeta: el indicador «Sin soporte» filtra la tabla (${sinSop.length})`);
+  await page.locator('#lista-tc tr').first().locator('input[data-tcsop]').setInputFiles({ name: 'factura.png', mimeType: 'image/png', buffer: PNG });
+  ok(await avisa('Soporte adjuntado'), 'tarjeta: adjunta la factura a un cargo');
+  await esperar();
+  ok((await page.$$('#lista-tc tr')).length === sinSop.length - 1, 'tarjeta: con factura sale de «Sin soporte»');
+  await page.click('.kpi[data-tcfiltro="todos"]');
+
+  // Importar filas pegadas desde Excel (una repetida, una con formato colombiano y un abono)
+  await page.click('[data-accion=tcAbrir][data-panel=importar]');
+  const desdeTc = await page.evaluate(() => document.querySelector('[data-tcsel=extracto] option:checked').textContent);
+  ok(!!desdeTc, 'tarjeta: abre el panel de importación');
+  const filaRep = await filaTc('LATAM AIRLINES').locator('td.tc-f').textContent();
+  const meses = { ene: '01', feb: '02', mar: '03', abr: '04', may: '05', jun: '06', jul: '07', ago: '08', sep: '09', oct: '10', nov: '11', dic: '12' };
+  const [dRep, mRep] = filaRep.trim().split(' ');
+  const anio = desdeTc.trim().slice(-4);
+  const fechaRep = `${dRep.padStart(2, '0')}/${meses[mRep]}/${anio}`;
+  await page.fill('textarea[data-tcimport]', `Fecha\tDescripción\tValor\n${fechaRep}\tLATAM AIRLINES CO\t1.320.400\n${fechaRep}\tHOTEL DECAMERON\t$ 2.480.000,00\n${fechaRep}\tABONO PSE\t500.000\ntotal\t\t`);
+  await page.click('[data-accion=tcAnalizar]');
+  await page.waitForSelector('.tc-cuenta');
+  const cuenta = await page.textContent('.tc-cuenta');
+  ok(cuenta.includes('2 movimientos listos') && cuenta.includes('1 repetido'), `tarjeta: reconoce columnas, formato de pesos y repetidos (${cuenta.replace(/\s+/g, ' ').trim()})`);
+  await page.click('[data-accion=tcImportarSi]');
+  ok(await avisa('2 movimientos importados'), 'tarjeta: importa los movimientos nuevos');
+  await esperar();
+  ok((await filaTc('ABONO PSE').textContent()).includes('−'), 'tarjeta: el abono queda como pago (negativo)');
+  ok((await filaTc('HOTEL DECAMERON').textContent()).includes('2.480.000'), 'tarjeta: lee «$ 2.480.000,00» como dos millones cuatrocientos ochenta mil');
+
+  // Registrar el gasto de la agencia y que coincida con el cargo importado
+  await page.click('[data-accion=tcAbrir][data-panel=registro]');
+  await page.fill('form[data-form=tcRegistro] input[name=fecha]', `${anio}-${meses[mRep]}-${dRep.padStart(2, '0')}`);
+  await page.fill('form[data-form=tcRegistro] input[name=descripcion]', 'Hotel Cartagena · grupo de prueba');
+  await page.fill('form[data-form=tcRegistro] input[name=valor]', '2.480.000');
+  await page.selectOption('form[data-form=tcRegistro] select[name=categoria_id]', { label: 'Hoteles y alojamiento' });
+  await page.click('form[data-form=tcRegistro] button[type=submit]');
+  ok(await avisa('coincide con un cargo'), 'tarjeta: el registro de la agencia coincide con el cargo');
+  await esperar();
+  ok((await filaTc('HOTEL DECAMERON').textContent()).includes('Coincide con'), 'tarjeta: el cargo muestra la sugerencia');
+
+  // Cerrar
+  ok(await page.isDisabled('[data-accion=tcCerrar]'), 'tarjeta: no se cierra con pendientes');
+  for (let i = 0; i < 30 && await page.$('#lista-tc [data-accion=tcConciliar]'); i++) {
+    const f = page.locator('#lista-tc tr', { has: page.locator('[data-accion=tcConciliar]') }).first();
+    const sel = f.locator('select[data-tccampo$=":categoria_id"]');
+    if (await sel.count() && !(await sel.inputValue())) { await sel.selectOption({ label: 'Otros' }); await esperar(); }
+    await f.locator('[data-accion=tcConciliar]').click();
+    await esperar();
+  }
+  ok((await kpi('todos')).trim() === '100 %', 'tarjeta: todo revisado, avance 100 %');
+  await page.click('[data-accion=tcCerrar]');
+  ok((await page.textContent('.tc-acc')).includes('no cuadra'), 'tarjeta: al cerrar avisa que el saldo no cuadra (entraron movimientos nuevos)');
+  await page.click('[data-accion=tcCerrarSi]');
+  ok(await avisa('Conciliación cerrada'), 'tarjeta: cierra la conciliación');
+  await esperar();
+  ok((await page.textContent('.tc-extracto')).includes('Cerrada') && !(await page.$('[data-accion=tcConciliar]')) && !(await page.$('select[data-tccampo]:not([disabled])')), 'tarjeta: cerrada, nada se edita');
+  await page.click('[data-tcpest=resumen]');
+  ok((await page.$$('.tc-bar')).length >= 4, 'tarjeta: resumen de gasto por categoría y por grupo');
+  await page.click('[data-tcpest=agencia]');
+  ok((await page.textContent('.tc-sec')).includes('Sin cargo en el extracto'), 'tarjeta: los registros sin cargo se señalan (seguro en tránsito)');
+  await page.click('[data-tcpest=banco]');
+  const [dTc] = await Promise.all([page.waitForEvent('download'), page.click('[data-accion=tcExportar]')]);
+  const csvTc = require('fs').readFileSync(await dTc.path(), 'utf8');
+  ok(csvTc.charCodeAt(0) === 0xFEFF && csvTc.includes('Saldo calculado') && csvTc.includes('HOTEL DECAMERON'), 'tarjeta: exporta la conciliación a Excel');
+  await page.click('[data-accion=tcReabrir]');
+  await page.click('[data-accion=tcReabrirSi]');
+  ok(await avisa('reabierta'), 'tarjeta: la reabre');
+  await esperar();
+  }
+
   await ir('equipo');
   await page.click('[data-activar$="|desactivar"] >> nth=0');
   await page.click('[data-confirmar=si]');
