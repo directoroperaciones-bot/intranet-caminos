@@ -83,7 +83,7 @@ Como Caminos es un cliente nuevo, se fusionaron las del manual (el manual lo per
 
 - **Permisos en Postgres** (`supabase/pruebas/correr.sh`): 201 reglas en verde (con las 25 de grupos y la clave del calendario, las 20 de marcar solo desde la oficina y las 32 de la conciliación de la tarjeta). Marcas solo con `marcar()`, orden de los pasos, bloqueo por IP, malla por sede, supervisor sin poderes de gerencia, comunicados por destinatario, solicitudes por revisor, ausencias aprobadas, `anon` sin acceso.
 - **Interfaz** (`pruebas/recorrido.js`): 4 roles × 2 anchos (1300 px y 390 px), cada pestaña (Grupos en tablero y línea de tiempo) sin desborde horizontal y sin errores de página.
-- **Acciones** (`pruebas/acciones.js`): 127 verificaciones (incluye recuperar contraseña, la pestaña Oficina, la conciliación de la tarjeta y crear, mover, arrastrar, editar y borrar grupos), entre ellas que el informe cuadra con un cálculo manual independiente y que el CSV sale con BOM, `;` y `\r\n`.
+- **Acciones** (`pruebas/acciones.js`): 139 verificaciones (incluye recuperar contraseña, la pestaña Oficina, los gastos y la conciliación de la tarjeta y crear, mover, arrastrar, editar y borrar grupos), entre ellas que el informe cuadra con un cálculo manual independiente y que el CSV sale con BOM, `;` y `\r\n`.
 
 ```bash
 # Postgres local (usuario postgres)
@@ -117,7 +117,10 @@ Límites: ninguna página web detecta con certeza un programa de acceso remoto (
 
 ## 3d. Conciliación de la tarjeta de crédito (pestaña Tarjeta, gerencia)
 
-Proceso de cada mes: crear el extracto (datos de su primera página), importar los movimientos (filas pegadas desde Excel o el CSV del banco), cruzarlos con los gastos que la agencia registró, clasificar cada cargo (categoría y grupo de viaje), adjuntar la factura, marcar lo no reconocido (reclamo al banco) o personal (cobro a la persona), comprobar el cuadre y cerrar.
+Dos pasos:
+
+1. **Gastos y soportes** (el día a día): cada vez que se paga con la tarjeta, se sube la foto o el PDF de la factura con el valor, la fecha, qué se pagó, la categoría y el grupo de viaje. Indicadores: gastos del mes, sin soporte, por conciliar y ya en el extracto. Un gasto sin factura se puede guardar y completar después.
+2. **Conciliar con el extracto** (cuando llega): crear el extracto (datos de su primera página), importar los movimientos (filas pegadas desde Excel o el CSV del banco), cruzarlos con los gastos subidos, revisar lo que quede, marcar lo no reconocido (reclamo al banco) o personal (cobro a la persona), comprobar el cuadre y cerrar.
 
 - **Indicadores arriba**: avance, por conciliar, sin soporte, no reconocidos, intereses y cargos, y cuadre con el extracto (saldo anterior + cargos − pagos = total a pagar). Cada indicador filtra la tabla.
 - **Cruce automático**: mismo valor y hasta 5 días de diferencia; los pagos y los cargos del banco (intereses, cuota de manejo, comisiones) se concilian solos con «Conciliar sugeridos».

@@ -160,7 +160,7 @@
   // ---------- Estado ----------
   const S = {
     ofi: { ip: null, equipos: [], sede: null, quitar: null, nombre: '' },
-    tc: { tarjetas: [], categorias: [], grupos: [], extractos: [], movs: [], regs: [], cruzados: new Map(), urls: {}, tarjeta: null, extracto: null, pestana: 'banco', filtro: 'todos', q: '',
+    tc: { tarjetas: [], categorias: [], grupos: [], extractos: [], movs: [], regs: [], cruzados: new Map(), urls: {}, tarjeta: null, extracto: null, pestana: 'banco', filtro: 'todos', q: '', paso: 'gastos', mes: '', gastos: [], gastosCruces: new Map(), filtroG: 'todos', archivoUrl: null,
       abierto: null, borrador: {}, importar: { texto: '', filas: null, mapa: {}, cab: [] }, archivoRegistro: null, confirmar: null, borrar: null, vivo: false, actualizado: null },
     pantalla: 'cargando', error: '', correoLogin: '', claveVoluntaria: false, ocupado: '', recuperacion: false, olvido: { enviado: false, correo: '' },
     usuario: null, perfil: null, sedes: [], areas: [], turnos: [], herramientas: [], personas: [], config: {}, revisores: [],
@@ -412,7 +412,7 @@
   }
   function reiniciar() {
     soltarTarjeta();
-    S.tc = Object.assign(S.tc, { tarjetas: [], extractos: [], movs: [], regs: [], tarjeta: null, extracto: null, abierto: null, borrador: {}, confirmar: null, borrar: null, vivo: false });
+    S.tc = Object.assign(S.tc, { tarjetas: [], extractos: [], movs: [], regs: [], gastos: [], tarjeta: null, extracto: null, abierto: null, borrador: {}, confirmar: null, borrar: null, vivo: false, paso: 'gastos', mes: '', filtroG: 'todos', archivoRegistro: null, archivoUrl: null, urls: {} });
     Object.assign(S, {
       pantalla: 'login', error: '', recuperacion: false, olvido: { enviado: false, correo: '' }, usuario: null, perfil: null, view: 'inicio', menu: false, hoy: null, asistencia: null, lb: null,
       malla: { lunes: '', sede: 'todas', vista: 'semana', filas: [], base: [], edit: null, guardando: false },
@@ -1803,6 +1803,7 @@
     T.extractos = T.tarjeta ? await q(sb.from('tc_extractos').select('*').eq('tarjeta_id', T.tarjeta).order('hasta', { ascending: false })) : [];
     if (!tcExtracto()) T.extracto = (T.extractos[0] || {}).id || null;
     await cargarDatosExtracto();
+    await cargarGastos();
     suscribirTarjeta();
   }
 
@@ -1821,7 +1822,6 @@
     T.regs = regs.filter((r) => T.cruzados.get(r.id) === e.id || (!T.cruzados.has(r.id) && r.fecha >= sumarDias(e.desde, -45)));
     const conSoporte = movs.concat(T.regs).filter((x) => x.soporte_ruta).map((x) => ({ ruta: x.soporte_ruta }));
     await firmar('conciliacion', conSoporte);
-    T.urls = {};
     conSoporte.forEach((f) => { T.urls[f.ruta] = f.url; });
     T.actualizado = new Date();
   }
@@ -1848,15 +1848,21 @@
     tcEspera = setTimeout(async () => {
       if (S.view !== 'tarjeta' || S.cargandoVista) return;
       if (S.ocupado) { avisoCambioTc(); return; }
-      try { await cargarDatosExtracto(); } catch (e) { return; }
-      // Si la persona está escribiendo, se espera a que salga del campo
-      const a = document.activeElement;
-      if (a && a.closest && a.closest('#contenido') && /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName) && a.type !== 'file') {
-        a.addEventListener('blur', () => { if (S.view === 'tarjeta') render(); }, { once: true });
-        return;
-      }
-      render();
+      try { await cargarDatosExtracto(); await cargarGastos(); } catch (e) { return; }
+      pintarTcCuandoSePueda();
     }, 450);
+  }
+  // Si la persona está escribiendo o acaba de tocar un botón, se espera: redibujar
+  // en ese momento le quitaría el foco o se comería el clic.
+  function pintarTcCuandoSePueda() {
+    if (S.view !== 'tarjeta') return;
+    const a = document.activeElement;
+    if (S.ocupado || (a && a.closest && a.closest('#contenido') && /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName) && a.type !== 'file')) {
+      const reintentar = () => setTimeout(pintarTcCuandoSePueda, 350);
+      if (S.ocupado) reintentar(); else a.addEventListener('blur', reintentar, { once: true });
+      return;
+    }
+    render();
   }
   const vivoTc = () => `<span id="tc-vivo" class="vivo${S.tc.vivo ? ' on' : ''}" title="${S.tc.vivo ? 'Los cambios se ven al instante, también los que haga otra persona' : 'Sin conexión en vivo: los datos se actualizan al recargar'}">${S.tc.vivo ? 'En vivo' : 'Sin conexión en vivo'}${S.tc.actualizado ? ` · ${hhmm(horaEn(miTz(), S.tc.actualizado))}` : ''}</span>`;
 
@@ -1903,26 +1909,27 @@
   function tarjetaView() {
     const T = S.tc;
     if (!T.tarjetas.length) {
-      return encabezado('Gerencia', 'Conciliación de la <em>tarjeta</em>', 'Cruza el extracto del banco con lo que la agencia pagó, adjunta las facturas y cierra cada mes con el saldo cuadrado.')
-        + `<section class="card tc-vacio"><span class="eyebrow">Primer paso</span><h2>Agrega la tarjeta de la empresa</h2>
+      return encabezado('Gerencia', 'Tarjeta de <em>crédito</em>', 'Sube cada gasto con su factura y, cuando llegue el extracto, concílialo.')
+        + `<section class="card tc-vacio"><span class="eyebrow">Antes de empezar</span><h2>Agrega la tarjeta de la empresa</h2>
           <p class="hint">Solo se guardan los últimos 4 dígitos: nunca el número completo, la fecha de vencimiento ni el código de seguridad.</p>${formTarjetaTc()}</section>`;
     }
-    const e = tcExtracto(), t = tcTarjeta();
+    const e = tcExtracto(), t = tcTarjeta(), enGastos = T.paso === 'gastos';
     const selTarjeta = T.tarjetas.length > 1 ? `<label class="field"><span>Tarjeta</span><select data-tcsel="tarjeta">${T.tarjetas.map((x) => `<option value="${x.id}"${x.id === T.tarjeta ? ' selected' : ''}>${esc(x.nombre)} ···${esc(x.ultimos4)}</option>`).join('')}</select></label>` : '';
     const selExtracto = T.extractos.length ? `<label class="field"><span>Extracto</span><select data-tcsel="extracto">${T.extractos.map((x) => `<option value="${x.id}"${x.id === T.extracto ? ' selected' : ''}>${esc(periodoTexto(x))}${x.estado === 'cerrado' ? ' · cerrado' : ''}</option>`).join('')}</select></label>` : '';
     const barra = `<div class="tc-barra">
         <div class="tc-id">${ico('tarjeta')}<div><b>${esc(t.nombre)} ···${esc(t.ultimos4)}</b><small>${esc([t.banco, t.franquicia].filter(Boolean).join(' · '))}${t.cupo ? ` · cupo ${plata(t.cupo)}` : ''}</small></div></div>
-        ${selTarjeta}${selExtracto}
+        ${selTarjeta}${enGastos ? '' : selExtracto}
         <div class="tc-barra-acc">${vivoTc()}
-          <button type="button" class="btn ghost sm" data-accion="tcAbrir" data-panel="extracto"${T.abierto === 'extracto' ? ' disabled' : ''}>${ico('mas')}Nuevo extracto</button>
+          ${enGastos ? '' : `<button type="button" class="btn ghost sm" data-accion="tcAbrir" data-panel="extracto"${T.abierto === 'extracto' ? ' disabled' : ''}>${ico('mas')}Nuevo extracto</button>`}
           <button type="button" class="btn txt sm" data-accion="tcAbrir" data-panel="tarjeta">${ico('tarjeta')}Otra tarjeta</button>
         </div>
       </div>`;
-    const panelArriba = T.abierto === 'extracto' || T.abierto === 'editarExtracto' ? `<section class="card tc-panel">${formExtractoTc(T.abierto === 'editarExtracto' ? e : null)}</section>`
+    const panelArriba = !enGastos && (T.abierto === 'extracto' || T.abierto === 'editarExtracto') ? `<section class="card tc-panel">${formExtractoTc(T.abierto === 'editarExtracto' ? e : null)}</section>`
       : T.abierto === 'tarjeta' ? `<section class="card tc-panel"><span class="eyebrow">Nueva tarjeta</span><h2>Agregar otra tarjeta</h2>${formTarjetaTc()}</section>` : '';
+    const cabeza = encabezado('Gerencia', 'Tarjeta de <em>crédito</em>', 'Paso 1: sube cada gasto con su factura apenas lo hagas. Paso 2: cuando llegue el extracto, cárgalo y concilia.') + pasosTc() + barra;
+    if (enGastos) return cabeza + panelArriba + gastosTc();
     if (!e) {
-      return encabezado('Gerencia', 'Conciliación de la <em>tarjeta</em>', 'Cruza el extracto del banco con lo que la agencia pagó, adjunta las facturas y cierra cada mes con el saldo cuadrado.', '')
-        + barra + (panelArriba || `<section class="card tc-vacio"><span class="eyebrow">Paso 2</span><h2>Crea el primer extracto</h2><p class="hint">Copia los datos de la primera página del extracto del banco: fechas del periodo, fecha límite de pago y saldos.</p>${formExtractoTc(null)}</section>`);
+      return cabeza + (panelArriba || `<section class="card tc-vacio"><span class="eyebrow">Paso 2</span><h2>Crea el primer extracto</h2><p class="hint">Copia los datos de la primera página del extracto del banco: fechas del periodo, fecha límite de pago y saldos.</p>${formExtractoTc(null)}</section>`);
     }
     const c = calcularTc(), sug = sugerenciasTc(), cerrado = tcCerrado();
     const nSug = [...sug.values()].length;
@@ -1958,7 +1965,6 @@
             : '<button type="button" class="btn txt sm" data-accion="tcReabrir">Reabrir conciliación</button>'}</div>`
       : `<div class="tc-acc">
           <button type="button" class="btn sm" data-accion="tcAbrir" data-panel="importar"${T.abierto === 'importar' ? ' disabled' : ''}>${ico('hoja')}Importar movimientos</button>
-          <button type="button" class="btn ghost sm" data-accion="tcAbrir" data-panel="registro"${T.abierto === 'registro' ? ' disabled' : ''}>${ico('mas')}Registrar gasto de la agencia</button>
           <button type="button" class="btn ghost sm" data-accion="tcAbrir" data-panel="mov"${T.abierto === 'mov' ? ' disabled' : ''}>${ico('mas')}Agregar movimiento</button>
           <button type="button" class="btn ghost sm" data-accion="tcSugeridos"${nSug ? '' : ' disabled'}${ocupado('tc')}>${ico('check')}Conciliar sugeridos${nSug ? ` (${nSug})` : ''}</button>
           <button type="button" class="btn txt sm" data-accion="tcExportar">${ico('descargar')}Exportar a Excel</button>
@@ -1967,14 +1973,107 @@
         </div>`;
 
     const panel = cerrado ? '' : T.abierto === 'importar' ? `<section class="card tc-panel">${importarTc()}</section>`
-      : T.abierto === 'registro' ? `<section class="card tc-panel">${formRegistroTc()}</section>`
       : T.abierto === 'mov' ? `<section class="card tc-panel">${formMovTc()}</section>` : '';
 
-    const pest = `<div class="seg tc-pest" role="group" aria-label="Vista">${[['banco', `Extracto del banco (${T.movs.length})`], ['agencia', `Registros de la agencia (${T.regs.length})`], ['resumen', 'Resumen por categoría']].map(([v, n]) => `<button type="button" data-tcpest="${v}" aria-pressed="${T.pestana === v}">${n}</button>`).join('')}</div>`;
+    const pest = `<div class="seg tc-pest" role="group" aria-label="Vista">${[['banco', `Extracto del banco (${T.movs.length})`], ['agencia', `Gastos subidos (${T.regs.length})`], ['resumen', 'Resumen por categoría']].map(([v, n]) => `<button type="button" data-tcpest="${v}" aria-pressed="${T.pestana === v}">${n}</button>`).join('')}</div>`;
     const cuerpo = T.pestana === 'agencia' ? agenciaTc() : T.pestana === 'resumen' ? resumenTc() : bancoTc(sug);
 
-    return encabezado('Gerencia', 'Conciliación de la <em>tarjeta</em>', 'Cruza el extracto del banco con lo que la agencia pagó, adjunta las facturas y cierra cada mes con el saldo cuadrado.')
-      + barra + panelArriba + resumen + kpis + acc + panel + pest + cuerpo;
+    return cabeza + panelArriba + resumen + kpis + acc + panel + pest + cuerpo;
+  }
+
+  function pasosTc() {
+    const T = S.tc, e = tcExtracto();
+    const sinSop = T.gastos.filter((g) => !g.soporte_ruta).length;
+    const subG = `${plural(T.gastos.length, 'gasto', 'gastos')} en ${nombreMes(T.mes || fechaEn(miTz()).slice(0, 7)).split(' ')[0]}${sinSop ? ` · ${sinSop} sin soporte` : ''}`;
+    const subC = e ? `Extracto ${periodoTexto(e)} · ${e.estado === 'cerrado' ? 'cerrado' : `${calcularTc().avance} % conciliado`}` : 'Aún no hay extractos';
+    const paso = (id, n, titulo, sub) => `<button type="button" class="tc-paso${T.paso === id ? ' on' : ''}" data-tcpaso="${id}" aria-pressed="${T.paso === id}"><span class="tc-paso-n">${n}</span><span><b>${titulo}</b><small>${esc(sub)}</small></span></button>`;
+    return `<nav class="tc-pasos" aria-label="Pasos">${paso('gastos', 1, 'Gastos y soportes', subG)}${paso('conciliar', 2, 'Conciliar con el extracto', subC)}</nav>`;
+  }
+
+  async function cargarGastos() {
+    const T = S.tc;
+    if (!T.mes) T.mes = fechaEn(miTz()).slice(0, 7);
+    if (!T.tarjeta) { T.gastos = []; T.gastosCruces = new Map(); return; }
+    const gastos = await todas(() => sb.from('tc_registros').select('*').eq('tarjeta_id', T.tarjeta).gte('fecha', T.mes + '-01').lte('fecha', ultimoDia(T.mes))
+      .order('fecha', { ascending: false }).order('id', { ascending: false }));
+    const ids = gastos.map((g) => g.id);
+    const cruces = ids.length ? await todas(() => sb.from('tc_movimientos').select('id,registro_id,extracto_id,estado').in('registro_id', ids)) : [];
+    T.gastosCruces = new Map(cruces.map((c) => [c.registro_id, c]));
+    T.gastos = gastos;
+    const conSoporte = gastos.filter((g) => g.soporte_ruta && !T.urls[g.soporte_ruta]).map((g) => ({ ruta: g.soporte_ruta }));
+    await firmar('conciliacion', conSoporte);
+    conSoporte.forEach((f) => { T.urls[f.ruta] = f.url; });
+  }
+
+  function gastosTc() {
+    const T = S.tc, b = T.borrador, mes = T.mes || fechaEn(miTz()).slice(0, 7);
+    const cruce = (g) => T.gastosCruces.get(g.id);
+    const total = T.gastos.reduce((t, g) => t + Number(g.valor), 0);
+    const sinSop = T.gastos.filter((g) => !g.soporte_ruta);
+    const porConc = T.gastos.filter((g) => !cruce(g));
+    const conc = T.gastos.filter((g) => cruce(g));
+    const tile = (f, etiqueta, valor, sub) => `<button type="button" class="kpi${T.filtroG === f ? ' on' : ''}" data-tcfiltrog="${f}" aria-pressed="${T.filtroG === f}"><span class="kpi-l">${etiqueta}</span><b class="kpi-v">${valor}</b><small>${sub}</small></button>`;
+    const kpis = `<div class="kpis kpis-4" aria-label="Indicadores de gastos">
+        ${tile('todos', `Gastos de ${nombreMes(mes).split(' ')[0]}`, plata(total), plural(T.gastos.length, 'gasto', 'gastos'))}
+        ${tile('sin_soporte', 'Sin soporte', String(sinSop.length), sinSop.length ? `${plata(sinSop.reduce((t, g) => t + Number(g.valor), 0))} sin factura` : 'Todos tienen factura')}
+        ${tile('por_conciliar', 'Por conciliar', plata(porConc.reduce((t, g) => t + Number(g.valor), 0)), `${plural(porConc.length, 'gasto', 'gastos')} esperando el extracto`)}
+        ${tile('conciliados', 'Ya en el extracto', String(conc.length), conc.length ? `${plata(conc.reduce((t, g) => t + Number(g.valor), 0))} cruzados` : 'Aún ninguno')}
+      </div>`;
+    const arch = T.archivoRegistro;
+    const form = `<section class="card tc-gasto-form">
+        <form data-form="tcGasto" data-borrador="tc" novalidate>
+          <div class="tc-gasto-grid">
+            <label class="tc-drop${arch ? ' lleno' : ''}">
+              <input type="file" accept="image/*,.heic,application/pdf" data-tcregarchivo="1">
+              ${arch && T.archivoUrl ? `<img src="${esc(T.archivoUrl)}" alt="">` : `<span class="tc-drop-i">${ico(arch ? 'documento' : 'clip')}</span>`}
+              <b>${arch ? esc(arch.name) : 'Foto o PDF de la factura'}</b><small>${arch ? 'Toca para cambiarla' : 'Toca para tomar la foto o elegir el archivo'}</small>
+            </label>
+            <div class="tc-gasto-campos">
+              <span class="eyebrow">Nuevo gasto</span>
+              <div class="form-grid">
+                <label class="field"><span>Valor</span><input name="valor" inputmode="decimal" value="${esc(b.valor || '')}" placeholder="$ 0" required></label>
+                <label class="field"><span>Fecha</span><input type="date" name="fecha" value="${esc(b.fecha || fechaEn(miTz()))}" required></label>
+                <label class="field tc-ancho2"><span>¿Qué se pagó?</span><input name="descripcion" maxlength="200" value="${esc(b.descripcion || '')}" placeholder="Ej.: Tiquetes Bogotá–Madrid · grupo Fátima" required></label>
+                <label class="field"><span>Categoría</span><select name="categoria_id">${opcionesCat(b.categoria_id)}</select></label>
+                ${T.grupos.length ? `<label class="field"><span>Grupo de viaje (opcional)</span><select name="grupo_id">${opcionesGrupo(b.grupo_id)}</select></label>` : ''}
+              </div>
+              <button class="btn" type="submit"${ocupado('tc')}>${ico('check')}Guardar gasto</button>
+            </div>
+          </div>
+        </form>
+      </section>`;
+    const lista = T.gastos.filter((g) => T.filtroG === 'sin_soporte' ? !g.soporte_ruta : T.filtroG === 'por_conciliar' ? !cruce(g) : T.filtroG === 'conciliados' ? !!cruce(g) : true);
+    const meses = [];
+    for (let i = 0; i < 12; i++) { const d = new Date(Date.UTC(+fechaEn(miTz()).slice(0, 4), +fechaEn(miTz()).slice(5, 7) - 1 - i, 1)); meses.push(d.toISOString().slice(0, 7)); }
+    if (!meses.includes(mes)) meses.push(mes);
+    const filas = lista.map((g) => {
+      const c = cruce(g);
+      const estado = c ? `<span class="chip ok xs">${ico('check')}${c.estado === 'conciliado' ? 'Conciliado' : 'En el extracto'}</span>` : `<span class="chip warn xs">${ico('reloj')}Esperando el extracto</span>`;
+      const acc = c ? '' : T.borrar === 'g' + g.id
+        ? `<span class="confirmar">¿Borrar?<span><button type="button" class="btn sm danger" data-accion="tcBorrarGastoSi" data-id="${g.id}"${ocupado('tc')}>Sí</button><button type="button" class="btn txt sm" data-accion="tcNo">No</button></span></span>`
+        : `<button type="button" class="btn txt sm" data-accion="tcBorrarGasto" data-id="${g.id}" aria-label="Borrar gasto">${ico('basura')}</button>`;
+      return `<tr>
+          <td class="nowrap tc-f">${esc(fechaCorta(g.fecha))}</td>
+          <th scope="row" class="tc-desc"><b>${esc(g.descripcion)}</b><small>${esc([(tcGrupo(g.grupo_id) || {}).nombre, g.responsable_id ? primerNombre(nombreDe(g.responsable_id)) : ''].filter(Boolean).join(' · '))}</small></th>
+          <td class="num nowrap">${plata(g.valor)}</td>
+          <td class="tc-cat"><select data-tcregcampo="${g.id}:categoria_id" aria-label="Categoría"${c && c.estado === 'conciliado' ? ' disabled' : ''} class="${g.categoria_id ? '' : 'falta'}">${opcionesCat(g.categoria_id)}</select></td>
+          <td class="tc-s">${soporteGastoTc(g)}</td>
+          <td class="tc-e">${estado}</td>
+          <td class="td-acc">${acc}</td>
+        </tr>`;
+    }).join('');
+    return kpis + form + `<section class="tc-sec">
+        <div class="toolbar"><h2 class="tc-h2">Gastos subidos</h2>
+          <label class="field tc-mes"><span>Mes</span><select data-tcmes>${meses.map((m) => `<option value="${m}"${m === mes ? ' selected' : ''}>${esc(nombreMes(m))}</option>`).join('')}</select></label></div>
+        <div class="tablewrap card flush"><table class="perm tc-tabla"><thead><tr><th scope="col">Fecha</th><th scope="col">Gasto</th><th scope="col" class="num">Valor</th><th scope="col">Categoría</th><th scope="col">Soporte</th><th scope="col">Estado</th><th scope="col">Acciones</th></tr></thead>
+          <tbody>${filas || `<tr><td colspan="7" class="vacio">${T.gastos.length ? 'Ningún gasto coincide con el filtro.' : 'Aún no hay gastos este mes. Sube el primero arriba.'}</td></tr>`}</tbody></table></div>
+      </section>`;
+  }
+  // El soporte de un gasto se puede cambiar mientras no esté en un extracto cerrado
+  function soporteGastoTc(g) {
+    const url = g.soporte_ruta ? S.tc.urls[g.soporte_ruta] : '';
+    if (g.soporte_ruta) return `<span class="tc-sop">${url ? `<a href="${esc(url)}" target="_blank" rel="noopener">${ico('clip')}Ver</a>` : `${ico('clip')}Adjunto`}<button type="button" class="btn txt sm" data-accion="tcQuitarSop" data-ref="r:${g.id}" aria-label="Quitar soporte">${ico('x')}</button></span>`;
+    return `<label class="btn txt sm tc-subir tc-falta">${ico('clip')}Adjuntar<input type="file" accept="image/*,.heic,application/pdf" data-tcsop="r:${g.id}"></label>`;
   }
 
   function opcionesCat(sel, vacio) {
@@ -2349,17 +2448,20 @@
   }
   async function guardarRegistroTc() {
     const b = S.tc.borrador, valor = numeroForm(b.valor), descripcion = String(b.descripcion || '').trim();
-    if (!descripcion || !valor) { toast('Escribe la descripción y el valor.', 'bad'); return; }
+    if (!valor) { toast('Escribe el valor del gasto.', 'bad'); const i = document.querySelector('form[data-form=tcGasto] input[name=valor]'); if (i) i.focus(); return; }
+    if (!descripcion) { toast('Escribe qué se pagó.', 'bad'); const i = document.querySelector('form[data-form=tcGasto] input[name=descripcion]'); if (i) i.focus(); return; }
     const archivo = S.tc.archivoRegistro;
     await accion('tc', async () => {
       const r = await q(sb.from('tc_registros').insert({ tarjeta_id: S.tc.tarjeta, fecha: b.fecha || fechaEn(miTz()), descripcion, valor, categoria_id: b.categoria_id ? +b.categoria_id : null,
         grupo_id: b.grupo_id ? +b.grupo_id : null, responsable_id: P().id }).select().single());
       if (archivo) await adjuntarTc('r', r.id, archivo, true);
-      S.tc.abierto = null; S.tc.borrador = {}; S.tc.archivoRegistro = null;
-      await cargarDatosExtracto();
+      if (S.tc.archivoUrl) URL.revokeObjectURL(S.tc.archivoUrl);
+      S.tc.abierto = null; S.tc.borrador = {}; S.tc.archivoRegistro = null; S.tc.archivoUrl = null;
+      S.tc.mes = r.fecha.slice(0, 7);
+      await Promise.all([cargarDatosExtracto(), cargarGastos()]);
       const s = sugerenciasTc();
       const m = [...s.entries()].find(([, x]) => x.registro && x.registro.id === r.id);
-      toast(m ? 'Registro guardado: coincide con un cargo del extracto.' : 'Registro guardado.');
+      toast(m ? 'Gasto guardado: coincide con un cargo del extracto.' : archivo ? 'Gasto guardado con su soporte.' : 'Gasto guardado. Falta el soporte: adjúntalo cuando lo tengas.', archivo || m ? 'ok' : 'warn');
     });
   }
   async function guardarMovTc() {
@@ -2441,7 +2543,7 @@
   }
   async function adjuntarTc(tipo, id, archivo, silencioso) {
     const tabla = tipo === 'm' ? 'tc_movimientos' : 'tc_registros';
-    const fila = (tipo === 'm' ? S.tc.movs : S.tc.regs).find((x) => x.id === id) || { id };
+    const fila = (tipo === 'm' ? S.tc.movs : S.tc.regs.concat(S.tc.gastos)).find((x) => x.id === id) || { id };
     const { subidos, fallas } = await subirArchivos('conciliacion', `${S.tc.tarjeta}/${tipo}${id}`, [archivo]);
     if (fallas || !subidos.length) throw new Error('No se pudo subir el soporte. Revisa que sea una foto o un PDF de menos de 10 MB.');
     const viejo = fila.soporte_ruta;
@@ -2656,16 +2758,22 @@
           <li><b>Comunicados:</b> avisos internos. Si piden confirmación, léelos y toca «Confirmar lectura». En Inicio aparece una franja si tienes alguno pendiente.</li>
           <li><b>Herramientas:</b> las tarjetas de Inicio abren el Gestor de reservas, Caminos Documentos y el Cotizador en una pestaña nueva.</li>
         </ul>` },
-      { id: 'tarjeta', titulo: 'Conciliar la tarjeta de crédito', ver: esGerencia(), html: `<p>En «Tarjeta» se cruza cada extracto del banco con lo que la agencia pagó. Cada mes:</p>
+      { id: 'tarjeta', titulo: 'Tarjeta de crédito: gastos y conciliación', ver: esGerencia(), html: `<p>La pestaña «Tarjeta» tiene dos pasos.</p>
+        <p><b>Paso 1 · Gastos y soportes</b> (cada vez que pagas con la tarjeta):</p>
         <ol>
-          <li><b>Crea el extracto</b> con los datos de su primera página: fechas del periodo, fecha límite de pago, saldo anterior y total a pagar.</li>
-          <li><b>Importa los movimientos</b>: descarga el extracto en Excel o CSV desde la sucursal virtual, copia las filas y pégalas (o sube el CSV). Los pagos, intereses, cuota de manejo y comisiones se reconocen solos.</li>
-          <li>Durante el mes, <b>registra los gastos de la agencia</b> pagados con la tarjeta, con su factura. La intranet los cruza con el extracto: mismo valor y hasta 5 días de diferencia.</li>
-          <li>Toca <b>«Conciliar sugeridos»</b>. Lo que quede, revísalo uno por uno: elige la categoría (y el grupo de viaje si aplica), adjunta la factura y toca «Conciliar».</li>
-          <li>Si no reconoces un cargo, márcalo <b>«No lo reconozco»</b> y repórtalo al banco. Si fue un gasto de una persona, márcalo <b>«Personal»</b> para cobrárselo.</li>
-          <li>Cuando el indicador «Cuadre con el extracto» diga <b>Cuadra</b> y no queden pendientes, toca <b>«Cerrar conciliación»</b>. Cerrada, no se puede editar, salvo que la reabras.</li>
+          <li>Toca el recuadro de la factura y toma la foto o elige el PDF.</li>
+          <li>Escribe el valor, la fecha y qué se pagó. Elige la categoría y, si aplica, el grupo de viaje.</li>
+          <li>Toca «Guardar gasto». Si aún no tienes la factura, guárdalo igual y adjúntala después: el indicador «Sin soporte» te recuerda cuáles faltan.</li>
         </ol>
-        <p>Los indicadores de arriba se actualizan al instante y cada uno filtra la tabla. Si otra persona con acceso cambia algo, lo ves sin recargar. De la tarjeta solo se guardan los últimos 4 dígitos.</p>` },
+        <p><b>Paso 2 · Conciliar con el extracto</b> (cuando llega el extracto del banco):</p>
+        <ol>
+          <li>Crea el extracto con los datos de su primera página: periodo, fecha límite de pago, saldo anterior y total a pagar.</li>
+          <li>Importa los movimientos: descarga el extracto en Excel o CSV desde la sucursal virtual, copia las filas y pégalas (o sube el CSV).</li>
+          <li>Toca «Conciliar sugeridos»: cada cargo se cruza con el gasto que subiste (mismo valor, hasta 5 días de diferencia), y los pagos e intereses se concilian solos.</li>
+          <li>Revisa lo que quede. Si no reconoces un cargo, márcalo «No lo reconozco» y repórtalo al banco. Si fue de una persona, márcalo «Personal».</li>
+          <li>Cuando «Cuadre con el extracto» diga <b>Cuadra</b> y no queden pendientes, toca «Cerrar conciliación».</li>
+        </ol>
+        <p>Los indicadores se actualizan al instante y cada uno filtra la lista. De la tarjeta solo se guardan los últimos 4 dígitos.</p>` },
       { id: 'solicitudes', titulo: 'Vacaciones, permisos e incapacidades', ver: moduloSol() || esGerencia(), html: `<ul>
           <li>En «Solicitudes» elige el tipo, las fechas y, si es un permiso de unas horas, la hora de inicio y de fin.</li>
           <li>Puedes adjuntar la foto o el PDF del soporte (opcional). Las fotos se reducen solas.</li>
@@ -2929,7 +3037,7 @@
   }
 
   // ---------- Eventos ----------
-  const ACCIONES = '[data-view],[data-accion],[data-marcar],[data-semana],[data-mvista],[data-editar],[data-leer],[data-comf],[data-borrarcom],[data-lb],[data-lbmover],[data-quitarimg],[data-revisar],[data-cancelarsol],[data-lbsol],[data-quitarsop],[data-revquitar],[data-selinf],[data-orden],[data-restablecer],[data-activar],[data-copiar],[data-guia],[data-soltipo],[data-confirmar],[data-demo],[data-gvista],[data-gabrir],[data-gmover],[data-gmes],[data-gborrar],[data-tcfiltro],[data-tcpest]';
+  const ACCIONES = '[data-view],[data-accion],[data-marcar],[data-semana],[data-mvista],[data-editar],[data-leer],[data-comf],[data-borrarcom],[data-lb],[data-lbmover],[data-quitarimg],[data-revisar],[data-cancelarsol],[data-lbsol],[data-quitarsop],[data-revquitar],[data-selinf],[data-orden],[data-restablecer],[data-activar],[data-copiar],[data-guia],[data-soltipo],[data-confirmar],[data-demo],[data-gvista],[data-gabrir],[data-gmover],[data-gmes],[data-gborrar],[data-tcfiltro],[data-tcpest],[data-tcpaso],[data-tcfiltrog]';
 
   document.addEventListener('click', async (ev) => {
     const el = ev.target.closest(ACCIONES);
@@ -2951,6 +3059,14 @@
     if (d.demo) { if (!S.ocupado) await iniciarSesion(d.demo, CFG.demo.clave); return; }
     if (d.tcfiltro) { S.tc.filtro = d.tcfiltro; if (S.tc.pestana !== 'banco') S.tc.pestana = 'banco'; render(); return; }
     if (d.tcpest) { S.tc.pestana = d.tcpest; render(); return; }
+    if (d.tcfiltrog) { S.tc.filtroG = d.tcfiltrog; render(); return; }
+    if (d.tcpaso) {
+      Object.assign(S.tc, { paso: d.tcpaso, abierto: null, confirmar: null, borrar: null });
+      if (d.tcpaso === 'gastos') { try { await cargarGastos(); } catch (e) { toast(errorTexto(e), 'bad'); } }
+      render();
+      window.scrollTo(0, 0);
+      return;
+    }
     if (d.accion) {
       switch (d.accion) {
         case 'menu': S.menu = !S.menu; render(); return;
@@ -2978,6 +3094,18 @@
         }
         case 'tcBorrarMov': S.tc.borrar = Number(d.id); render(); return;
         case 'tcBorrarReg': S.tc.borrar = 'r' + d.id; render(); return;
+        case 'tcBorrarGasto': S.tc.borrar = 'g' + d.id; render(); return;
+        case 'tcBorrarGastoSi': {
+          const id = Number(d.id), fila = S.tc.gastos.find((x) => x.id === id);
+          await accion('tc', async () => {
+            await q(sb.from('tc_registros').delete().eq('id', id));
+            if (fila && fila.soporte_ruta) await sb.storage.from('conciliacion').remove([fila.soporte_ruta]);
+            S.tc.borrar = null;
+            await Promise.all([cargarGastos(), cargarDatosExtracto()]);
+            toast('Gasto borrado.');
+          });
+          return;
+        }
         case 'tcBorrarMovSi':
         case 'tcBorrarRegSi': {
           const esMov = d.accion === 'tcBorrarMovSi', id = Number(d.id);
@@ -2993,12 +3121,12 @@
         }
         case 'tcQuitarSop': {
           const [tipo, id] = d.ref.split(':');
-          const fila = (tipo === 'm' ? S.tc.movs : S.tc.regs).find((x) => x.id === +id);
+          const fila = (tipo === 'm' ? S.tc.movs : S.tc.regs.concat(S.tc.gastos)).find((x) => x.id === +id);
           if (!fila) return;
           await accion('tc', async () => {
             await q(sb.from(tipo === 'm' ? 'tc_movimientos' : 'tc_registros').update({ soporte_ruta: null, soporte_nombre: null }).eq('id', fila.id));
             await sb.storage.from('conciliacion').remove([fila.soporte_ruta]);
-            await cargarDatosExtracto();
+            await Promise.all([cargarDatosExtracto(), cargarGastos()]);
             toast('Soporte quitado.');
           });
           return;
@@ -3352,7 +3480,7 @@
     if (tipo === 'grupo') { await guardarGrupo(); return; }
     if (tipo === 'tcTarjeta') { await guardarTarjetaTc(); return; }
     if (tipo === 'tcExtracto') { await guardarExtractoTc(f.dataset.id); return; }
-    if (tipo === 'tcRegistro') { await guardarRegistroTc(); return; }
+    if (tipo === 'tcRegistro' || tipo === 'tcGasto') { await guardarRegistroTc(); return; }
     if (tipo === 'tcMov') { await guardarMovTc(); }
   });
 
@@ -3408,10 +3536,31 @@
     if (d.tcsop) {
       const [tipo, id] = d.tcsop.split(':'), archivo = el.files && el.files[0];
       if (!archivo) return;
-      await accion('tc', async () => { await adjuntarTc(tipo, +id, archivo); await cargarDatosExtracto(); });
+      await accion('tc', async () => { await adjuntarTc(tipo, +id, archivo); await Promise.all([cargarDatosExtracto(), cargarGastos()]); });
       return;
     }
-    if (d.tcregarchivo) { S.tc.archivoRegistro = (el.files && el.files[0]) || null; return; }
+    if (d.tcregarchivo) {
+      if (S.tc.archivoUrl) URL.revokeObjectURL(S.tc.archivoUrl);
+      const f = (el.files && el.files[0]) || null;
+      S.tc.archivoRegistro = f;
+      S.tc.archivoUrl = f && /^image\/(jpeg|png|webp|gif)$/.test(f.type) ? URL.createObjectURL(f) : null;
+      render();
+      return;
+    }
+    if (d.tcmes !== undefined) {
+      S.tc.mes = el.value; S.tc.filtroG = 'todos';
+      try { await cargarGastos(); } catch (e) { toast(errorTexto(e), 'bad'); }
+      render();
+      return;
+    }
+    if (d.tcregcampo) {
+      const [id, campo] = d.tcregcampo.split(':');
+      await accion('tc', async () => {
+        await q(sb.from('tc_registros').update({ [campo]: el.value ? +el.value : null }).eq('id', +id));
+        await Promise.all([cargarGastos(), cargarDatosExtracto()]);
+      });
+      return;
+    }
     if (d.tcarchivo) {
       const archivo = el.files && el.files[0];
       if (!archivo) return;

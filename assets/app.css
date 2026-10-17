@@ -653,7 +653,7 @@ tr.tc-no_reconocido td, tr.tc-no_reconocido th { background: rgba(253, 236, 234,
   .tc-acc .tc-cerrar, .tc-acc .confirmar { margin-left: 0; }
   .tc-bar { grid-template-columns: minmax(0, 1fr) auto; }
   .tc-bar-t { grid-column: 1 / -1; grid-row: 2; }
-  .kpis > .kpi:last-child:nth-child(even) { grid-column: 1 / -1; }
+  .kpis:not(.kpis-4) > .kpi:last-child:nth-child(even) { grid-column: 1 / -1; }
   /* En el celular cada movimiento es una tarjeta */
   .tc-sec .tablewrap { overflow: visible; }
   .tc-tabla thead { display: none; }
@@ -668,4 +668,43 @@ tr.tc-no_reconocido td, tr.tc-no_reconocido th { background: rgba(253, 236, 234,
   .tc-tabla .tc-s { grid-column: 1; }
   .tc-tabla .tc-e, .tc-tabla .tc-est-reg { grid-column: 2; min-width: 0; align-items: flex-end; text-align: right; }
   .tc-tabla td.vacio { grid-column: 1 / -1; }
+}
+
+/* Tarjeta: los dos pasos y el registro rápido de gastos */
+.tc-pasos { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin-bottom: 18px; }
+.tc-paso { display: flex; align-items: center; gap: 14px; text-align: left; font: inherit; color: var(--texto); background: var(--blanco); border: 1px solid var(--hairline); border-radius: 18px; padding: 14px 18px; cursor: pointer; min-width: 0; }
+.tc-paso:hover { border-color: var(--coral-foco); }
+.tc-paso:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--coral-suave); }
+.tc-paso b { display: block; color: var(--carbon); font-size: 16px; }
+.tc-paso small { display: block; color: var(--pizarra); font-size: 12px; margin-top: 2px; }
+.tc-paso-n { flex: none; width: 34px; height: 34px; border-radius: 999px; display: grid; place-items: center; font-weight: 700; background: var(--tabla); color: var(--pizarra); }
+.tc-paso.on { border-color: var(--coral); box-shadow: inset 0 0 0 1px var(--coral); }
+.tc-paso.on .tc-paso-n { background: var(--coral); color: var(--blanco); }
+.kpis.kpis-4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.tc-gasto-form { margin-bottom: 22px; }
+.tc-gasto-grid { display: grid; grid-template-columns: 240px minmax(0, 1fr); gap: 22px; align-items: stretch; }
+.tc-gasto-campos { display: flex; flex-direction: column; gap: 12px; align-items: flex-start; }
+.tc-gasto-campos .form-grid { width: 100%; grid-template-columns: repeat(3, minmax(0, 1fr)); margin: 0; }
+.tc-gasto-campos .tc-ancho2 { grid-column: span 3; }
+.tc-drop { position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; text-align: center; padding: 18px; min-height: 200px; border: 2px dashed var(--coral-foco); border-radius: 18px; background: var(--coral-5); cursor: pointer; overflow: hidden; }
+.tc-drop:hover, .tc-drop:focus-within { border-color: var(--coral); background: var(--coral-suave); }
+.tc-drop input { position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; }
+.tc-drop-i { width: 52px; height: 52px; border-radius: 999px; display: grid; place-items: center; background: var(--blanco); color: var(--coral); }
+.tc-drop-i .i { width: 24px; height: 24px; }
+.tc-drop b { color: var(--carbon); font-size: 15px; overflow-wrap: anywhere; }
+.tc-drop small { color: var(--pizarra); font-size: 12px; }
+.tc-drop img { max-width: 100%; max-height: 120px; border-radius: 10px; object-fit: contain; }
+.tc-drop.lleno { border-style: solid; border-color: var(--ok); background: var(--ok-bg); }
+.tc-h2 { font-size: 20px; margin-right: auto; }
+.tc-mes { min-width: 200px; }
+.tc-subir.tc-falta { color: var(--warn); }
+@media (max-width: 1100px) { .kpis.kpis-4 { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 760px) {
+  .tc-pasos { grid-template-columns: minmax(0, 1fr); gap: 8px; }
+  .tc-gasto-grid { grid-template-columns: minmax(0, 1fr); }
+  .tc-drop { min-height: 140px; }
+  .tc-gasto-campos .form-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .tc-gasto-campos .tc-ancho2 { grid-column: 1 / -1; }
+  .tc-gasto-campos .btn { width: 100%; }
+  .tc-mes { min-width: 0; flex: 1 1 100%; }
 }

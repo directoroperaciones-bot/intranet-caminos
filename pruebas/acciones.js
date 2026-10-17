@@ -377,6 +377,40 @@ let page;
   {
   // ---------- Tarjeta: conciliación de la tarjeta de crédito ----------
   await ir('tarjeta');
+  // Paso 1: gastos y soportes
+  ok((await page.textContent('.tc-paso.on')).includes('Gastos y soportes'), 'tarjeta: abre en el paso 1, gastos y soportes');
+  const kpiG = (f) => page.textContent(`.kpi[data-tcfiltrog="${f}"] .kpi-v`);
+  const sinSopAntes = Number((await kpiG('sin_soporte')).trim());
+  await page.click('form[data-form=tcGasto] button[type=submit]');
+  ok(await avisa('Escribe el valor'), 'gastos: pide el valor');
+  await page.setInputFiles('input[data-tcregarchivo]', { name: 'factura-almuerzo.png', mimeType: 'image/png', buffer: PNG });
+  ok((await page.textContent('.tc-drop')).includes('factura-almuerzo.png') && !!(await page.$('.tc-drop img')), 'gastos: muestra la factura elegida');
+  await page.fill('form[data-form=tcGasto] input[name=valor]', '150.000');
+  await page.fill('form[data-form=tcGasto] input[name=descripcion]', 'Almuerzo con clientes de la empresa Andina');
+  await page.selectOption('form[data-form=tcGasto] select[name=categoria_id]', { label: 'Atención a clientes' });
+  await page.click('form[data-form=tcGasto] button[type=submit]');
+  ok(await avisa('con su soporte'), 'gastos: guarda el gasto con su factura');
+  await esperar();
+  const filaG = page.locator('.tc-sec tbody tr', { hasText: 'clientes de la empresa Andina' });
+  ok((await filaG.textContent()).includes('150.000') && (await filaG.locator('.tc-sop a').count()) === 1 && (await filaG.textContent()).includes('Esperando el extracto'), 'gastos: aparece en la lista con su soporte, esperando el extracto');
+  ok(!(await page.$('.tc-drop img')) && (await page.inputValue('form[data-form=tcGasto] input[name=valor]')) === '', 'gastos: el formulario queda listo para el siguiente');
+  await page.fill('form[data-form=tcGasto] input[name=valor]', '45000');
+  await page.fill('form[data-form=tcGasto] input[name=descripcion]', 'Taxi aeropuerto');
+  await page.click('form[data-form=tcGasto] button[type=submit]');
+  ok(await avisa('Falta el soporte'), 'gastos: sin factura avisa que falta el soporte');
+  await esperar();
+  ok(Number((await kpiG('sin_soporte')).trim()) === sinSopAntes + 1, 'gastos: el indicador «Sin soporte» suma uno');
+  await page.click('.kpi[data-tcfiltrog="sin_soporte"]');
+  ok((await page.textContent('.tc-sec tbody')).includes('Taxi aeropuerto') && !(await page.textContent('.tc-sec tbody')).includes('empresa Andina'), 'gastos: el indicador filtra la lista');
+  await page.locator('.tc-sec tbody tr', { hasText: 'Taxi aeropuerto' }).locator('input[data-tcsop]').setInputFiles({ name: 'taxi.png', mimeType: 'image/png', buffer: PNG });
+  ok(await avisa('Soporte adjuntado'), 'gastos: adjunta la factura después');
+  await esperar();
+  ok(Number((await kpiG('sin_soporte')).trim()) === sinSopAntes, 'gastos: con la factura sale de «Sin soporte»');
+  await page.click('.kpi[data-tcfiltrog="todos"]');
+
+  // Paso 2: conciliar con el extracto
+  await page.click('[data-tcpaso=conciliar]');
+  await page.waitForSelector('.kpi[data-tcfiltro="todos"]');
   const kpi = (f) => page.textContent(`.kpi[data-tcfiltro="${f}"] .kpi-v`);
   const filaTc = (txt) => page.locator('#lista-tc tr', { hasText: txt });
   ok((await kpi('todos')).trim() === '14 %', 'tarjeta: indicador de avance (2 de 14 revisados)');
@@ -430,14 +464,17 @@ let page;
   ok((await filaTc('ABONO PSE').textContent()).includes('−'), 'tarjeta: el abono queda como pago (negativo)');
   ok((await filaTc('HOTEL DECAMERON').textContent()).includes('2.480.000'), 'tarjeta: lee «$ 2.480.000,00» como dos millones cuatrocientos ochenta mil');
 
-  // Registrar el gasto de la agencia y que coincida con el cargo importado
-  await page.click('[data-accion=tcAbrir][data-panel=registro]');
-  await page.fill('form[data-form=tcRegistro] input[name=fecha]', `${anio}-${meses[mRep]}-${dRep.padStart(2, '0')}`);
-  await page.fill('form[data-form=tcRegistro] input[name=descripcion]', 'Hotel Cartagena · grupo de prueba');
-  await page.fill('form[data-form=tcRegistro] input[name=valor]', '2.480.000');
-  await page.selectOption('form[data-form=tcRegistro] select[name=categoria_id]', { label: 'Hoteles y alojamiento' });
-  await page.click('form[data-form=tcRegistro] button[type=submit]');
-  ok(await avisa('coincide con un cargo'), 'tarjeta: el registro de la agencia coincide con el cargo');
+  // Subir en el paso 1 el gasto que corresponde al cargo importado
+  await page.click('[data-tcpaso=gastos]');
+  await page.fill('form[data-form=tcGasto] input[name=fecha]', `${anio}-${meses[mRep]}-${dRep.padStart(2, '0')}`);
+  await page.fill('form[data-form=tcGasto] input[name=descripcion]', 'Hotel Cartagena · grupo de prueba');
+  await page.fill('form[data-form=tcGasto] input[name=valor]', '2.480.000');
+  await page.selectOption('form[data-form=tcGasto] select[name=categoria_id]', { label: 'Hoteles y alojamiento' });
+  await page.click('form[data-form=tcGasto] button[type=submit]');
+  ok(await avisa('coincide con un cargo'), 'tarjeta: el gasto subido coincide con el cargo del extracto');
+  await esperar();
+  ok((await page.$eval('select[data-tcmes]', (s) => s.value)) === `${anio}-${meses[mRep]}`, 'gastos: la lista salta al mes del gasto guardado');
+  await page.click('[data-tcpaso=conciliar]');
   await esperar();
   ok((await filaTc('HOTEL DECAMERON').textContent()).includes('Coincide con'), 'tarjeta: el cargo muestra la sugerencia');
 

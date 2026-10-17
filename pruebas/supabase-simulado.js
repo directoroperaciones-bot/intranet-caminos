@@ -278,6 +278,13 @@
     const r7 = reg(13, 'Licencias Microsoft 365', 98900, 'Software y suscripciones', null, desde);
     reg(24, 'Seguro de viaje · Assist Card', 420000, 'Operadores y proveedores turísticos', g1, desde);
     reg(3, 'Tiquetes · Jubilados Club Social', 1640000, 'Tiquetes aéreos', null, corte);
+    // Gastos recientes (del mes en curso), algunos todavía sin factura
+    const g6 = (db.grupos[5] || {}).id;
+    reg(-1, 'Anticipo hotel Eje Cafetero · Jubilados', 2300000, 'Hoteles y alojamiento', g6, HOY);
+    reg(-3, 'Campaña Google Ads del mes', 600000, 'Publicidad y marketing', null, HOY);
+    reg(-5, 'Almuerzo con cliente corporativo', 186000, 'Atención a clientes', null, HOY);
+    reg(-8, 'Licencias Microsoft 365', 98900, 'Software y suscripciones', null, HOY);
+    db.tc_registros.slice(-4, -2).forEach((r) => { r.soporte_ruta = `1/r${r.id}/factura.pdf`; r.soporte_nombre = 'factura.pdf'; });
     movs.forEach((m) => {
       const extra = {};
       if (m[1] === 'MICROSOFT*365') Object.assign(extra, { estado: 'conciliado', categoria_id: CAT('Software y suscripciones'), registro_id: r7.id });
