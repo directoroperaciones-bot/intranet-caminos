@@ -171,6 +171,7 @@
     com: { lista: [], imgs: [], lect: [], filtro: 'todos', q: '', borrador: { confirmar: true }, archivos: [], borrar: null },
     lb: null,
     sol: { lista: [], adj: [], tipo: 'vacaciones', borrador: {}, archivos: [], cancelar: null, coment: {} },
+    grupos: { lista: [], vista: 'tablero', mes: '', abierto: null, borrador: {}, borrar: null, clave: null },
   };
 
   // ---------- Permisos de interfaz (solo muestran u ocultan) ----------
@@ -537,6 +538,7 @@
   // ---------- Marco de la aplicación ----------
   const TABS = [
     { id: 'inicio', nombre: 'Inicio', ver: () => true },
+    { id: 'grupos', nombre: 'Grupos', ver: () => true },
     { id: 'malla', nombre: 'Malla', ver: () => true },
     { id: 'comunicados', nombre: 'Comunicados', ver: () => true, badge: () => sinConfirmar().length },
     { id: 'asistencia', nombre: 'Asistencia', ver: () => esLider() },
@@ -583,6 +585,7 @@
 
   function vistaActual() {
     switch (S.view) {
+      case 'grupos': return gruposView();
       case 'malla': return mallaView();
       case 'comunicados': return comunicadosView();
       case 'asistencia': return asistenciaView();
@@ -1925,6 +1928,13 @@
           <li>Si hoy no almuerzas, usa «Hoy no almuerzo · marcar salida».</li>
           <li>Si tienes vacaciones, permiso o incapacidad aprobados, ese día no tienes que marcar.</li>
         </ul>` },
+      { id: 'grupos', titulo: 'Grupos de viaje', ver: true, html: `<ul>
+          <li><b>Tablero:</b> cada grupo es una tarjeta en una de cinco columnas: Cotizando, Confirmado, Documentación lista, En viaje y Finalizado. Arrástrala a otra columna o usa las flechas de la tarjeta (en el celular, desliza para ver las demás columnas).</li>
+          <li><b>Nuevo grupo:</b> nombre, destino, fechas de salida y regreso, pasajeros, responsable, alcance y notas internas. Toca el nombre de una tarjeta para cambiarla o eliminarla.</li>
+          <li><b>Línea de tiempo:</b> cada grupo con fechas es una barra del día de salida al de regreso; cambia de mes con las flechas.</li>
+          <li><b>Google Calendar:</b> los grupos con fechas aparecen solos en el calendario compartido «Grupos Caminos» (puede tardar unos minutos). Las notas internas no van al calendario.</li>
+          <li>Todo el equipo puede crear, mover, cambiar y eliminar grupos; cada tarjeta guarda quién hizo el último cambio.</li>
+        </ul>` },
       { id: 'malla', titulo: 'Malla, comunicados y herramientas', ver: true, html: `<ul>
           <li><b>Malla:</b> el horario de cada persona por semana. Las celdas con borde de color son cambios puntuales de ese día.</li>
           <li><b>Comunicados:</b> avisos internos. Si piden confirmación, léelos y toca «Confirmar lectura». En Inicio aparece una franja si tienes alguno pendiente.</li>
@@ -1966,9 +1976,202 @@
         </div>`;
   }
 
+  // ---------- Grupos (tablero, línea de tiempo y calendario) ----------
+  // Todo el equipo activo crea, mueve y borra grupos. Google Calendar los recibe
+  // con un programa de Google (calendario/LEEME.md) que usa grupos_calendario().
+  const COLUMNAS = [
+    { id: 'cotizando', nombre: 'Cotizando', cls: 'c1' },
+    { id: 'confirmado', nombre: 'Confirmado', cls: 'c2' },
+    { id: 'documentacion', nombre: 'Documentación lista', cls: 'c3' },
+    { id: 'en_viaje', nombre: 'En viaje', cls: 'c4' },
+    { id: 'finalizado', nombre: 'Finalizado', cls: 'c5' },
+  ];
+  const columna = (id) => COLUMNAS.find((c) => c.id === id) || COLUMNAS[0];
+  const grupo = (id) => S.grupos.lista.find((g) => String(g.id) === String(id));
+  const diasEntre = (a, b) => Math.round((new Date(b + 'T12:00:00Z') - new Date(a + 'T12:00:00Z')) / 864e5);
+  function fechasGrupo(g) {
+    if (!g.salida) return 'Sin fechas';
+    if (!g.regreso) return `Sale el ${fechaCorta(g.salida)}`;
+    const n = diasEntre(g.salida, g.regreso) + 1;
+    return `${fechaCorta(g.salida)} → ${fechaCorta(g.regreso)} · ${plural(n, 'día', 'días')}`;
+  }
+
+  async function cargarGrupos() {
+    S.grupos.lista = await todas(() => sb.from('grupos').select('*').order('salida', { ascending: true }).order('id'));
+    if (!S.grupos.mes) S.grupos.mes = fechaEn(miTz()).slice(0, 7);
+  }
+
+  function gruposView() {
+    const G = S.grupos;
+    const nuevo = `<button type="button" class="btn" data-accion="grupoNuevo"${G.abierto === 'nuevo' ? ' disabled' : ''}>${ico('mas')}Nuevo grupo</button>`;
+    const barra = `<div class="toolbar">
+        <div class="seg" role="group" aria-label="Vista">${[['tablero', 'Tablero'], ['tiempo', 'Línea de tiempo']].map(([v, n]) => `<button type="button" data-gvista="${v}" aria-pressed="${G.vista === v}">${n}</button>`).join('')}</div>
+        <span class="hint">${plural(G.lista.length, 'grupo', 'grupos')}</span>
+        ${esAdmin() ? `<button type="button" class="btn ghost sm" data-accion="calClave"${ocupado('calClave')}>${ico('calendario')}Conectar Google Calendar</button>` : ''}
+      </div>`;
+    const clave = G.clave ? `<section class="clave card" aria-live="polite">
+        <span class="eyebrow">Google Calendar</span><h2>Clave del calendario</h2>
+        <p class="hint">Pégala en el programa de Google (paso 4 de <b>calendario/LEEME.md</b>). Se muestra <b>una sola vez</b> y la clave anterior dejó de servir.</p>
+        <dl><div><dt>Clave</dt><dd class="mono">${esc(G.clave)}</dd></div></dl>
+        <div class="acc"><button type="button" class="btn" data-copiar="calendario">${ico('copiar')}Copiar</button><button type="button" class="btn ghost" data-accion="calCerrar">Listo</button></div>
+      </section>` : '';
+    return encabezado('Viajes', '<em>Grupos</em>', 'Cada grupo es una tarjeta: muévela de columna a medida que avanza. Los grupos con fechas aparecen en la línea de tiempo y en el calendario «Grupos Caminos» de Google.', nuevo)
+      + clave + (G.abierto ? grupoFormView() : '') + barra
+      + (G.vista === 'tiempo' ? lineaTiempoView() : tableroView());
+  }
+
+  function tarjetaGrupo(g) {
+    const i = COLUMNAS.findIndex((c) => c.id === g.estado);
+    const resp = g.responsable_id && persona(g.responsable_id);
+    return `<article class="kcard" draggable="true" data-arrastrar="${g.id}">
+        <button type="button" class="kcard-t" data-gabrir="${g.id}">${esc(g.nombre)}</button>
+        ${g.destino ? `<span class="kcard-d">${esc(g.destino)}</span>` : ''}
+        <span class="kcard-f">${ico('calendario')}${esc(fechasGrupo(g))}</span>
+        <div class="kcard-pie">
+          <span>${g.pasajeros != null ? `${ico('usuarios')}${g.pasajeros}` : ''}${resp ? `<span class="avatar sm" title="${esc(resp.nombre)}">${esc(initials(resp.nombre))}</span>` : ''}</span>
+          <span class="kcard-mover">
+            <button type="button" class="btn txt sm" data-gmover="${g.id}|-1" aria-label="Mover a ${esc(i > 0 ? COLUMNAS[i - 1].nombre : '')}"${i <= 0 ? ' disabled' : ''}>${ico('izq')}</button>
+            <button type="button" class="btn txt sm" data-gmover="${g.id}|1" aria-label="Mover a ${esc(i < COLUMNAS.length - 1 ? COLUMNAS[i + 1].nombre : '')}"${i >= COLUMNAS.length - 1 ? ' disabled' : ''}>${ico('der')}</button>
+          </span>
+        </div>
+      </article>`;
+  }
+
+  function tableroView() {
+    return `<div class="kanban">${COLUMNAS.map((c) => {
+      const lista = S.grupos.lista.filter((g) => g.estado === c.id);
+      return `<section class="kcol ${c.cls}" data-soltar="${c.id}" aria-label="${esc(c.nombre)}">
+          <h2 class="kcol-h"><span>${esc(c.nombre)}</span><span class="badge">${lista.length}</span></h2>
+          <div class="kcol-l">${lista.length ? lista.map(tarjetaGrupo).join('') : '<p class="vacio">Sin grupos</p>'}</div>
+        </section>`;
+    }).join('')}</div>`;
+  }
+
+  function lineaTiempoView() {
+    const G = S.grupos, mes = G.mes, desde = mes + '-01', hasta = ultimoDia(mes), n = +hasta.slice(8, 10);
+    const hoy = fechaEn(miTz());
+    const dias = Array.from({ length: n }, (_, i) => sumarDias(desde, i));
+    const enMes = G.lista.filter((g) => g.salida && g.salida <= hasta && (g.regreso || g.salida) >= desde);
+    const sinFecha = G.lista.filter((g) => !g.salida);
+    const cols = `--dias: ${n}`;
+    const cab = `<div class="gantt-fila gantt-cab" style="${cols}"><span></span>${dias.map((d) => `<span class="${d === hoy ? 'hoy' : ''}${diaSemana(d) >= 6 ? ' finde' : ''}">${+d.slice(8, 10)}</span>`).join('')}</div>`;
+    const filas = enMes.map((g) => {
+      const a = g.salida < desde ? 1 : +g.salida.slice(8, 10);
+      const fin = g.regreso || g.salida;
+      const b = fin > hasta ? n : +fin.slice(8, 10);
+      const c = columna(g.estado);
+      return `<div class="gantt-fila" style="${cols}">
+          <button type="button" class="gantt-nom" data-gabrir="${g.id}"><b>${esc(g.nombre)}</b><small>${esc([g.destino, c.nombre].filter(Boolean).join(' · '))}</small><small class="gantt-fechas">${esc(fechasGrupo(g))}</small></button>
+          <span class="gantt-barra ${c.cls}${g.salida < desde ? ' sigue-antes' : ''}${fin > hasta ? ' sigue-despues' : ''}" style="grid-column: ${a + 1} / ${b + 2}" title="${esc(g.nombre + ' · ' + fechasGrupo(g))}">${esc(fechasGrupo(g))}</span>
+        </div>`;
+    }).join('');
+    const [y, m] = mes.split('-').map(Number);
+    return `<div class="weeknav">
+        <button type="button" class="btn ghost sm" data-gmes="-1" aria-label="Mes anterior">${ico('izq')}</button>
+        <b>${esc(nombreMes(mes))}</b>
+        <button type="button" class="btn ghost sm" data-gmes="1" aria-label="Mes siguiente">${ico('der')}</button>
+        ${mes !== hoy.slice(0, 7) ? '<button type="button" class="btn txt sm" data-gmes="0">Este mes</button>' : ''}
+      </div>
+      <div class="card flush gantt">${enMes.length ? cab + filas : `<p class="vacio">No hay grupos de viaje en ${esc(MESES[m - 1])} de ${y}.</p>`}</div>
+      <div class="leyenda gantt-leyenda">${COLUMNAS.map((c) => `<span><i class="gantt-punto ${c.cls}"></i>${esc(c.nombre)}</span>`).join('')}</div>
+      ${sinFecha.length ? `<p class="hint">Sin fechas todavía: ${sinFecha.map((g) => `<button type="button" class="enlace" data-gabrir="${g.id}">${esc(g.nombre)}</button>`).join(', ')}.</p>` : ''}`;
+  }
+
+  function grupoFormView() {
+    const G = S.grupos, b = G.borrador, editar = G.abierto !== 'nuevo';
+    const g = editar ? grupo(G.abierto) : null;
+    const confirmar = editar && G.borrar === G.abierto;
+    const meta = g ? `<p class="hint">Creado por ${esc(nombreDe(g.creado_por))}${g.actualizado_por ? ` · último cambio de ${esc(nombreDe(g.actualizado_por))}, ${esc(fechaHora(g.actualizado, miTz()))}` : ''}.</p>` : '';
+    return `<section class="card grupo-form">
+        <form data-form="grupo" data-borrador="grupo" novalidate>
+          <span class="eyebrow">${editar ? 'Editar grupo' : 'Nuevo grupo'}</span><h2>${editar ? esc(g ? g.nombre : '') : 'Crear grupo'}</h2>
+          ${S.error ? `<p class="err" role="alert">${esc(S.error)}</p>` : ''}
+          <div class="form-grid">
+            <label class="field"><span>Nombre del grupo</span><input name="nombre" value="${esc(b.nombre || '')}" maxlength="120" required autocomplete="off" placeholder="Peregrinación Fátima y Lourdes"></label>
+            <label class="field"><span>Destino</span><input name="destino" value="${esc(b.destino || '')}" maxlength="120" autocomplete="off" placeholder="Portugal y Francia"></label>
+            <label class="field"><span>Salida</span><input name="salida" type="date" value="${esc(b.salida || '')}"></label>
+            <label class="field"><span>Regreso</span><input name="regreso" type="date" value="${esc(b.regreso || '')}"${b.salida ? ` min="${esc(b.salida)}"` : ''}></label>
+            <label class="field"><span>Pasajeros</span><input name="pasajeros" type="number" min="0" max="9999" inputmode="numeric" value="${esc(b.pasajeros == null ? '' : b.pasajeros)}"></label>
+            <label class="field"><span>Responsable</span><select name="responsable_id"><option value="">Sin responsable</option>${activas().map((p) => `<option value="${p.id}"${b.responsable_id === p.id ? ' selected' : ''}>${esc(p.nombre)}</option>`).join('')}</select></label>
+            <label class="field"><span>Columna</span><select name="estado">${COLUMNAS.map((c) => `<option value="${c.id}"${(b.estado || 'cotizando') === c.id ? ' selected' : ''}>${esc(c.nombre)}</option>`).join('')}</select></label>
+            <label class="field full"><span>Alcance</span><textarea name="alcance" rows="3" maxlength="4000" placeholder="Qué incluye: aéreos, hoteles, traslados, guía…">${esc(b.alcance || '')}</textarea></label>
+            <label class="field full"><span>Notas internas</span><textarea name="notas" rows="3" maxlength="4000" placeholder="Solo para el equipo: no van al calendario.">${esc(b.notas || '')}</textarea></label>
+          </div>
+          ${meta}
+          <div class="acc">
+            <button class="btn" type="submit"${ocupado('grupo')}>${ico('check')}${S.ocupado === 'grupo' ? 'Guardando…' : 'Guardar'}</button>
+            <button class="btn ghost" type="button" data-accion="grupoCancelar">Cancelar</button>
+            ${editar ? (confirmar
+              ? `<span class="confirmar">¿Eliminar este grupo? También sale del calendario.<span><button type="button" class="btn sm danger" data-gborrar="si"${ocupado('grupoBorrar')}>Sí, eliminar</button><button type="button" class="btn txt sm" data-gborrar="no">No</button></span></span>`
+              : `<button class="btn txt" type="button" data-gborrar="pedir">${ico('basura')}Eliminar</button>`) : ''}
+          </div>
+        </form>
+      </section>`;
+  }
+
+  function abrirGrupo(id) {
+    const G = S.grupos;
+    S.error = '';
+    G.borrar = null;
+    if (id === 'nuevo') {
+      G.abierto = 'nuevo';
+      G.borrador = { estado: 'cotizando', responsable_id: P().id };
+    } else {
+      const g = grupo(id);
+      if (!g) return;
+      G.abierto = g.id;
+      G.borrador = { nombre: g.nombre, destino: g.destino, salida: g.salida || '', regreso: g.regreso || '', pasajeros: g.pasajeros == null ? '' : g.pasajeros, responsable_id: g.responsable_id || '', estado: g.estado, alcance: g.alcance, notas: g.notas };
+    }
+    foco = 'form[data-form=grupo] input[name=nombre]';
+    render();
+    window.scrollTo(0, 0);
+  }
+
+  async function guardarGrupo() {
+    const G = S.grupos, b = G.borrador;
+    const fila = {
+      nombre: String(b.nombre || '').trim(), destino: String(b.destino || '').trim(),
+      salida: b.salida || null, regreso: b.regreso || null,
+      pasajeros: b.pasajeros === '' || b.pasajeros == null ? null : Math.round(+b.pasajeros),
+      responsable_id: b.responsable_id || null, estado: b.estado || 'cotizando',
+      alcance: String(b.alcance || '').trim(), notas: String(b.notas || '').trim(),
+    };
+    S.error = !fila.nombre ? 'Escribe el nombre del grupo.'
+      : fila.salida && fila.regreso && fila.regreso < fila.salida ? 'El regreso no puede ser antes de la salida.'
+      : !fila.salida && fila.regreso ? 'Pon también la fecha de salida.'
+      : fila.pasajeros != null && !(fila.pasajeros >= 0 && fila.pasajeros <= 9999) ? 'Revisa el número de pasajeros.' : '';
+    if (S.error) { foco = fila.nombre ? 'form[data-form=grupo] input[name=salida]' : 'form[data-form=grupo] input[name=nombre]'; render(); return; }
+    await accion('grupo', async () => {
+      if (G.abierto === 'nuevo') await q(sb.from('grupos').insert(fila));
+      else await q(sb.from('grupos').update(fila).eq('id', G.abierto));
+      const nuevo = G.abierto === 'nuevo';
+      G.abierto = null; G.borrador = {};
+      await cargarGrupos();
+      toast(nuevo ? `Grupo «${fila.nombre}» creado.` : 'Cambios guardados.');
+    });
+  }
+
+  async function moverGrupo(id, estado) {
+    const g = grupo(id);
+    if (!g || g.estado === estado) return;
+    const antes = g.estado;
+    g.estado = estado; // se ve de inmediato; si falla, vuelve
+    render();
+    try {
+      await q(sb.from('grupos').update({ estado }).eq('id', g.id));
+      await cargarGrupos();
+      render();
+      toast(`«${g.nombre}» pasó a ${columna(estado).nombre}.`);
+    } catch (e) {
+      g.estado = antes;
+      render();
+      toast(errorTexto(e), 'bad');
+    }
+  }
+
   // ---------- Navegación ----------
   const CARGAS = {
-    inicio: cargarInicio, malla: cargarMalla, comunicados: cargarComunicados, asistencia: cargarAsistencia,
+    inicio: cargarInicio, grupos: cargarGrupos, malla: cargarMalla, comunicados: cargarComunicados, asistencia: cargarAsistencia,
     informes: cargarInforme, solicitudes: cargarSolicitudes, equipo: recargarPersonas, oficina: cargarOficina,
   };
   let navegacion = 0;
@@ -2000,7 +2203,7 @@
   }
 
   // ---------- Eventos ----------
-  const ACCIONES = '[data-view],[data-accion],[data-marcar],[data-semana],[data-mvista],[data-editar],[data-leer],[data-comf],[data-borrarcom],[data-lb],[data-lbmover],[data-quitarimg],[data-revisar],[data-cancelarsol],[data-lbsol],[data-quitarsop],[data-revquitar],[data-selinf],[data-orden],[data-restablecer],[data-activar],[data-copiar],[data-guia],[data-soltipo],[data-confirmar],[data-demo]';
+  const ACCIONES = '[data-view],[data-accion],[data-marcar],[data-semana],[data-mvista],[data-editar],[data-leer],[data-comf],[data-borrarcom],[data-lb],[data-lbmover],[data-quitarimg],[data-revisar],[data-cancelarsol],[data-lbsol],[data-quitarsop],[data-revquitar],[data-selinf],[data-orden],[data-restablecer],[data-activar],[data-copiar],[data-guia],[data-soltipo],[data-confirmar],[data-demo],[data-gvista],[data-gabrir],[data-gmover],[data-gmes],[data-gborrar]';
 
   document.addEventListener('click', async (ev) => {
     const el = ev.target.closest(ACCIONES);
@@ -2055,6 +2258,12 @@
         case 'exportar': exportarInforme(); return;
         case 'agregarTurno': await accion('turno', agregarTurno); return;
         case 'lbCerrar': S.lb = null; render(); return;
+        case 'grupoNuevo': abrirGrupo('nuevo'); return;
+        case 'grupoCancelar': S.error = ''; S.grupos.abierto = null; S.grupos.borrador = {}; S.grupos.borrar = null; render(); return;
+        case 'calClave':
+          await accion('calClave', async () => { S.grupos.clave = await q(sb.rpc('nueva_clave_calendario')); });
+          return;
+        case 'calCerrar': S.grupos.clave = null; render(); return;
         case 'cerrarClave': S.equipo.claveNueva = null; render(); return;
         case 'validarIp':
         case 'validarEquipo': {
@@ -2248,9 +2457,38 @@
       await confirmarCuenta();
       return;
     }
+    if (d.copiar === 'calendario') { if (S.grupos.clave) await copiarTexto(S.grupos.clave); return; }
     if (d.copiar) {
       const c = S.equipo.claveNueva;
       if (c) await copiarTexto(`${MARCA.textoClave}\n${location.origin}${location.pathname}\nUsuario: ${c.correo}\nContraseña temporal: ${c.clave}\nAl entrar, crea tu propia contraseña.`);
+      return;
+    }
+    if (d.gvista) { S.grupos.vista = d.gvista; render(); return; }
+    if (d.gabrir) { abrirGrupo(d.gabrir); return; }
+    if (d.gmover) {
+      const [id, paso] = d.gmover.split('|');
+      const g = grupo(id), i = g ? COLUMNAS.findIndex((c) => c.id === g.estado) + +paso : -1;
+      if (COLUMNAS[i]) await moverGrupo(id, COLUMNAS[i].id);
+      return;
+    }
+    if (d.gmes) {
+      const G = S.grupos, [y, m] = G.mes.split('-').map(Number);
+      if (d.gmes === '0') G.mes = fechaEn(miTz()).slice(0, 7);
+      else { const f = new Date(Date.UTC(y, m - 1 + +d.gmes, 1)); G.mes = f.toISOString().slice(0, 7); }
+      render();
+      return;
+    }
+    if (d.gborrar) {
+      const G = S.grupos;
+      if (d.gborrar === 'pedir') { G.borrar = G.abierto; render(); return; }
+      if (d.gborrar === 'no') { G.borrar = null; render(); return; }
+      await accion('grupoBorrar', async () => {
+        const g = grupo(G.abierto);
+        await q(sb.from('grupos').delete().eq('id', G.abierto));
+        G.abierto = null; G.borrador = {}; G.borrar = null;
+        await cargarGrupos();
+        toast(`Grupo «${g ? g.nombre : ''}» eliminado.`);
+      });
       return;
     }
     if (d.guia) { const n = document.getElementById('guia-' + d.guia); if (n) n.scrollIntoView({ behavior: 'smooth', block: 'start' }); }
@@ -2333,10 +2571,12 @@
     }
     if (tipo === 'com') { await publicarComunicado(f); return; }
     if (tipo === 'sol') { await enviarSolicitud(); return; }
-    if (tipo === 'cuenta') { await crearCuenta(); }
+    if (tipo === 'cuenta') { await crearCuenta(); return; }
+    if (tipo === 'grupo') { await guardarGrupo(); }
   });
 
   // Borradores: lo escrito sobrevive a cada render
+  const borradorDe = (k) => (k === 'com' ? S.com.borrador : k === 'sol' ? S.sol.borrador : k === 'grupo' ? S.grupos.borrador : S.equipo.borrador);
   document.addEventListener('input', (ev) => {
     const el = ev.target;
     if (el.id === 'ofi-nombre') { S.ofi.nombre = el.value; return; }
@@ -2354,7 +2594,7 @@
     const form = el.closest && el.closest('form[data-borrador]');
     if (form && el.name) {
       const k = form.dataset.borrador;
-      const b = k === 'com' ? S.com.borrador : k === 'sol' ? S.sol.borrador : S.equipo.borrador;
+      const b = borradorDe(k);
       b[el.name] = el.type === 'checkbox' ? el.checked : el.value;
       if (k === 'com' && el.name === 'titulo') { const h = el.parentElement.querySelector('.hint'); if (h) h.textContent = `${el.value.length}/140`; }
     }
@@ -2366,7 +2606,7 @@
     const form = el.closest && el.closest('form[data-borrador]');
     if (form && el.name && (el.tagName === 'SELECT' || el.type === 'checkbox')) {
       const k = form.dataset.borrador;
-      const b = k === 'com' ? S.com.borrador : k === 'sol' ? S.sol.borrador : S.equipo.borrador;
+      const b = borradorDe(k);
       b[el.name] = el.type === 'checkbox' ? el.checked : el.value;
       if (k === 'com' && el.name === 'destino') render();
       return;
@@ -2424,6 +2664,35 @@
         toast('Acceso actualizado.');
       });
     }
+  });
+
+  // Tablero de grupos: arrastrar una tarjeta a otra columna (en el celular, las flechas de la tarjeta)
+  document.addEventListener('dragstart', (ev) => {
+    const c = ev.target.closest && ev.target.closest('[data-arrastrar]');
+    if (!c) return;
+    ev.dataTransfer.setData('text/plain', c.dataset.arrastrar);
+    ev.dataTransfer.effectAllowed = 'move';
+    c.classList.add('arrastrando');
+  });
+  document.addEventListener('dragend', (ev) => {
+    const c = ev.target.closest && ev.target.closest('[data-arrastrar]');
+    if (c) c.classList.remove('arrastrando');
+    document.querySelectorAll('.kcol.encima').forEach((x) => x.classList.remove('encima'));
+  });
+  document.addEventListener('dragover', (ev) => {
+    const col = ev.target.closest && ev.target.closest('[data-soltar]');
+    if (!col) return;
+    ev.preventDefault();
+    document.querySelectorAll('.kcol.encima').forEach((x) => { if (x !== col) x.classList.remove('encima'); });
+    col.classList.add('encima');
+  });
+  document.addEventListener('drop', async (ev) => {
+    const col = ev.target.closest && ev.target.closest('[data-soltar]');
+    if (!col) return;
+    ev.preventDefault();
+    col.classList.remove('encima');
+    const id = ev.dataTransfer.getData('text/plain');
+    if (id) await moverGrupo(id, col.dataset.soltar);
   });
 
   // Celdas de la malla y campos de turnos: se resuelven al salir

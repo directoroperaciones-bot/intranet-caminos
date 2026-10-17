@@ -2,7 +2,7 @@
 
 Intranet del equipo de Caminos, construida con el *Manual técnico · Intranet corporativa (versión final)* y con el sistema de diseño de Caminos (el mismo de Caminos Documentos: coral `#F25061`, Poppins, logo con la estrella, fondo hueso, botones con radio 10).
 
-**Qué trae:** acceso con correo corporativo y contraseña, pase de jornada para marcar asistencia, malla de horarios (horario fijo + cambios puntuales + turnos), comunicados con confirmación de lectura, asistencia del día, informe mensual de gerencia con exportación a Excel, solicitudes de vacaciones, permisos e incapacidades, administración de cuentas y una guía de uso según el rol.
+**Qué trae:** acceso con correo corporativo y contraseña, **grupos de viaje** (tablero de cinco columnas, línea de tiempo y calendario compartido de Google), pase de jornada para marcar asistencia, malla de horarios (horario fijo + cambios puntuales + turnos), comunicados con confirmación de lectura, asistencia del día, informe mensual de gerencia con exportación a Excel, solicitudes de vacaciones, permisos e incapacidades, administración de cuentas y una guía de uso según el rol.
 
 **Accesos a las herramientas (tarjetas en Inicio):**
 
@@ -75,13 +75,14 @@ Como Caminos es un cliente nuevo, se fusionaron las del manual (el manual lo per
 | `006_supervisor.sql` | 006 a 010 |
 | `007_horario_fijo.sql` | 011 |
 | `008_ver_solicitudes.sql` | Corrección propia: la regla de lectura de solicitudes usa la fila y no vuelve a consultar la tabla (sin esto, enviar una solicitud fallaba en Supabase real) |
-| `009_marcar_desde_oficina.sql` | Seguridad propia: IP real del cliente (no se puede falsificar), computadores autorizados y funciones para la pestaña Oficina |
+| `009_grupos.sql` | Propia: grupos de viaje (todo el equipo activo los crea, mueve y borra), clave y lectura para Google Calendar (`calendario/LEEME.md`) |
+| `010_marcar_desde_oficina.sql` | Seguridad propia: IP real del cliente (no se puede falsificar), computadores autorizados y funciones para la pestaña Oficina |
 
 ## 3. Pruebas hechas
 
-- **Permisos en Postgres** (`supabase/pruebas/correr.sh`): 144 reglas en verde. Marcas solo con `marcar()`, orden de los pasos, bloqueo por IP, malla por sede, supervisor sin poderes de gerencia, comunicados por destinatario, solicitudes por revisor, ausencias aprobadas, `anon` sin acceso.
-- **Interfaz** (`pruebas/recorrido.js`): 4 roles × 2 anchos (1300 px y 390 px), cada pestaña sin desborde horizontal y sin errores de página.
-- **Acciones** (`pruebas/acciones.js`): 80 verificaciones (incluye recuperar contraseña y la pestaña Oficina), entre ellas que el informe cuadra con un cálculo manual independiente y que el CSV sale con BOM, `;` y `\r\n`.
+- **Permisos en Postgres** (`supabase/pruebas/correr.sh`): 169 reglas en verde (con las 25 de grupos y la clave del calendario, y las 20 de marcar solo desde la oficina). Marcas solo con `marcar()`, orden de los pasos, bloqueo por IP, malla por sede, supervisor sin poderes de gerencia, comunicados por destinatario, solicitudes por revisor, ausencias aprobadas, `anon` sin acceso.
+- **Interfaz** (`pruebas/recorrido.js`): 4 roles × 2 anchos (1300 px y 390 px), cada pestaña (Grupos en tablero y línea de tiempo) sin desborde horizontal y sin errores de página.
+- **Acciones** (`pruebas/acciones.js`): 98 verificaciones (incluye recuperar contraseña, la pestaña Oficina y crear, mover, arrastrar, editar y borrar grupos), entre ellas que el informe cuadra con un cálculo manual independiente y que el CSV sale con BOM, `;` y `\r\n`.
 
 ```bash
 # Postgres local (usuario postgres)
@@ -89,6 +90,8 @@ PGHOST=… PGPORT=… PGUSER=postgres bash supabase/pruebas/correr.sh
 # Interfaz (con el servidor de la sección 1 corriendo)
 node pruebas/recorrido.js capturas
 node pruebas/acciones.js
+# Programa de Google Calendar (sin Google)
+node calendario/probar.js
 ```
 
 Lo que el simulador **no** cubre: los permisos de `service_role` y la Edge Function real. Crear una cuenta en el Supabase real de Caminos es parte obligatoria de la prueba final (manual §13.4).

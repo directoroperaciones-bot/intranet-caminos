@@ -1,5 +1,5 @@
 -- =====================================================================
--- Intranet Caminos · 009 · Marcar solo desde la oficina
+-- Intranet Caminos · 010 · Marcar solo desde la oficina
 -- 1. IP real: marcar() leía el primer valor de x-forwarded-for, que el
 --    navegador puede inventar. Ahora se usa cf-connecting-ip (lo pone
 --    Cloudflare y no se puede falsificar) o, si falta, el último valor de
