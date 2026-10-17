@@ -43,10 +43,10 @@ async function sinDesborde(page, etiqueta) {
 (async () => {
   const browser = await chromium.launch();
   const cuentas = [
-    { correo: 'andrea.rojas@caminos.example', clave: 'gerencia', esperadas: ['inicio', 'grupos', 'malla', 'comunicados', 'asistencia', 'informes', 'solicitudes', 'equipo'] },
-    { correo: 'carolina.mendez@caminos.example', clave: 'directora', esperadas: ['inicio', 'grupos', 'malla', 'comunicados', 'asistencia', 'informes', 'solicitudes'] },
-    { correo: 'julian.torres@caminos.example', clave: 'supervisor', esperadas: ['inicio', 'grupos', 'malla', 'comunicados', 'solicitudes', 'equipo'] },
-    { correo: 'daniela.castro@caminos.example', clave: 'colaboradora', esperadas: ['inicio', 'grupos', 'malla', 'comunicados', 'solicitudes'] },
+    { correo: 'andrea.rojas@caminos.example', clave: 'gerencia', esperadas: ['inicio', 'malla', 'comunicados', 'asistencia', 'informes', 'solicitudes', 'equipo', 'oficina'] },
+    { correo: 'carolina.mendez@caminos.example', clave: 'directora', esperadas: ['inicio', 'malla', 'comunicados', 'asistencia', 'informes', 'solicitudes'] },
+    { correo: 'julian.torres@caminos.example', clave: 'supervisor', esperadas: ['inicio', 'malla', 'comunicados', 'solicitudes', 'equipo'] },
+    { correo: 'daniela.castro@caminos.example', clave: 'colaboradora', esperadas: ['inicio', 'malla', 'comunicados', 'solicitudes'] },
   ];
   for (const ancho of [1300, 390]) {
     for (const c of cuentas) {
@@ -67,16 +67,6 @@ async function sinDesborde(page, etiqueta) {
             await sinDesborde(page, `${c.clave} @${ancho} malla ${mv}`);
           }
           await page.click('[data-mvista="semana"]');
-          continue;
-        }
-        if (v === 'grupos') {
-          for (const gv of ['tablero', 'tiempo']) {
-            await page.click(`[data-gvista="${gv}"]`);
-            await page.waitForTimeout(80);
-            await captura(page, `${ancho}-${c.clave}-grupos-${gv}`);
-            await sinDesborde(page, `${c.clave} @${ancho} grupos ${gv}`);
-          }
-          await page.click('[data-gvista="tablero"]');
           continue;
         }
         await captura(page, `${ancho}-${c.clave}-${v}`);

@@ -12,6 +12,12 @@ let page;
 (async () => {
   const browser = await chromium.launch();
   page = await browser.newPage({ viewport: { width: 1300, height: 900 }, acceptDownloads: true });
+  // Las pruebas asumen un día hábil con almuerzo: se fija el miércoles de esta semana a las 10:30 de Bogotá
+  const miercoles = new Date();
+  miercoles.setUTCDate(miercoles.getUTCDate() - ((miercoles.getUTCDay() + 6) % 7) + 2);
+  miercoles.setUTCHours(15, 30, 0, 0);
+  await page.clock.install({ time: miercoles });
+  await page.clock.resume();
   const errores = [];
   page.on('pageerror', (e) => errores.push(e.message));
   const esperar = () => page.waitForFunction(() => !document.querySelector('.cargando') && !document.querySelector('[aria-busy="true"]'));
@@ -317,73 +323,61 @@ let page;
   await page.click('[data-accion=moduloSol]');
   await esperar();
 
+  // ---------- Oficina: marcar solo desde la oficina ----------
+  const LLAVE = 'caminos-intranet-equipo';
+  await ir('oficina');
+  ok((await page.textContent('.ofi-ip')).includes('190.25.14.7'), 'oficina: muestra la IP de la conexión');
+  ok(await page.isDisabled('[data-accion=validarIp]'), 'oficina: el control de red no se activa sin IP registrada');
+  await page.click('[data-accion=ipAgregar]');
+  ok(await avisa('IP de la oficina registrada'), 'oficina: registra la IP de la oficina con un toque');
+  await page.click('[data-accion=validarIp]');
+  await esperar();
+  ok((await page.getAttribute('[data-accion=validarIp]', 'aria-checked')) === 'true', 'oficina: activa «solo desde la red de la oficina»');
+  ok(await page.isDisabled('[data-accion=validarEquipo]'), 'oficina: el control de computadores no se activa sin computadores');
+  await page.click('[data-accion=autorizarEquipo]');
+  ok(await avisa('Escribe un nombre'), 'oficina: pide nombre para el computador');
+  await page.fill('#ofi-nombre', 'Recepción');
+  await page.click('[data-accion=autorizarEquipo]');
+  ok(await avisa('«Recepción» puede marcar'), 'oficina: autoriza este computador');
+  ok((await page.textContent('#contenido')).includes('Este computador está autorizado como Recepción'), 'oficina: reconoce el computador autorizado');
+  ok(await page.evaluate((k) => JSON.parse(localStorage.getItem(k)).llave.length === 64, LLAVE), 'oficina: el navegador guarda la llave');
+  await page.click('[data-accion=validarEquipo]');
+  await esperar();
+  ok((await page.getAttribute('[data-accion=validarEquipo]', 'aria-checked')) === 'true', 'oficina: activa «solo desde computadores autorizados»');
+
+  await entrar('daniela.castro@caminos.example');
+  ok((await page.textContent('.pass-pie')).includes('computadores autorizados'), 'pase: avisa que solo se marca desde computadores autorizados');
+  await page.evaluate((k) => { window.__llave = localStorage.getItem(k); localStorage.removeItem(k); }, LLAVE);
+  await ir('malla'); await ir('inicio');
+  ok((await page.textContent('.pass')).includes('Este equipo no está autorizado para marcar') && !(await page.$('.mark-btn')), 'pase: sin la llave (celular u otro equipo) no deja marcar');
+  await page.evaluate((k) => localStorage.setItem(k, window.__llave), LLAVE);
+  await ir('malla'); await ir('inicio');
+  await page.click('.mark-btn');
+  ok(await avisa('marcada a las'), 'pase: desde el computador autorizado y la red de la oficina sí marca');
+
+  await entrar('andrea.rojas@caminos.example');
+  await ir('oficina');
+  ok((await page.textContent('table.perm')).includes('Aún no marca') === false, 'oficina: muestra la última marca del computador');
+  await page.click('[data-accion=quitarEquipo]');
+  await page.click('[data-accion=quitarEquipoSi]');
+  ok(await avisa('Apaga el control 2'), 'oficina: no deja quitar el último computador con el control activo');
+  await page.click('[data-accion=validarEquipo]');
+  await esperar();
+  await page.click('[data-accion=quitarEquipo]');
+  await page.click('[data-accion=quitarEquipoSi]');
+  ok(await avisa('Computador quitado'), 'oficina: quita un computador con confirmación');
+  ok(await page.evaluate((k) => localStorage.getItem(k) === null, LLAVE), 'oficina: quitar este computador borra su llave');
+  await page.click('[data-accion=ipQuitar]');
+  ok(await avisa('Apaga el control 1'), 'oficina: no deja quitar la última IP con el control activo');
+  await page.click('[data-accion=validarIp]');
+  await esperar();
+  await page.click('[data-accion=ipQuitar]');
+  ok(await avisa('IP quitada'), 'oficina: quita la IP');
+
   await ir('equipo');
   await page.click('[data-activar$="|desactivar"] >> nth=0');
   await page.click('[data-confirmar=si]');
   ok(await avisa('desactivada'), 'administración: desactiva una cuenta con confirmación');
-
-  // ---------- Grupos ----------
-  await ir('grupos');
-  const enColumna = (col, nombre) => page.$$eval(`[data-soltar="${col}"] .kcard-t`, (bs, n) => bs.some((b) => b.textContent === n), nombre);
-  ok(await enColumna('confirmado', 'Peregrinación Fátima y Lourdes'), 'grupos: el tablero muestra los grupos en su columna');
-  await page.click('[data-accion=grupoNuevo]');
-  await page.click('form[data-form=grupo] button[type=submit]');
-  ok((await page.textContent('form[data-form=grupo] .err')).includes('nombre'), 'grupos: pide el nombre');
-  await page.fill('form[data-form=grupo] input[name=nombre]', 'Prueba Medellín');
-  await page.fill('form[data-form=grupo] input[name=destino]', 'Medellín');
-  await page.fill('form[data-form=grupo] input[name=salida]', '2026-12-10');
-  await page.fill('form[data-form=grupo] input[name=regreso]', '2026-12-08');
-  await page.click('form[data-form=grupo] button[type=submit]');
-  ok((await page.textContent('form[data-form=grupo] .err')).includes('regreso'), 'grupos: el regreso no puede ser antes de la salida');
-  await page.fill('form[data-form=grupo] input[name=regreso]', '2026-12-13');
-  await page.fill('form[data-form=grupo] input[name=pasajeros]', '15');
-  await page.fill('form[data-form=grupo] textarea[name=alcance]', 'Bus y hotel');
-  await page.click('form[data-form=grupo] button[type=submit]');
-  ok(await avisa('creado'), 'grupos: crea un grupo');
-  await esperar();
-  ok(await enColumna('cotizando', 'Prueba Medellín'), 'grupos: el grupo nuevo empieza en Cotizando');
-  const tarjeta = page.locator('.kcard', { hasText: 'Prueba Medellín' });
-  ok((await tarjeta.textContent()).includes('4 días'), 'grupos: la tarjeta cuenta los días del viaje');
-  await tarjeta.locator('[data-gmover$="|1"]').click();
-  ok(await avisa('Confirmado'), 'grupos: la flecha mueve a la columna siguiente');
-  await esperar();
-  ok(await enColumna('confirmado', 'Prueba Medellín'), 'grupos: queda en Confirmado');
-  await page.locator('.kcard', { hasText: 'Prueba Medellín' }).dragTo(page.locator('[data-soltar="en_viaje"]'));
-  ok(await avisa('En viaje'), 'grupos: arrastrar la tarjeta la mueve de columna');
-  await esperar();
-  ok(await enColumna('en_viaje', 'Prueba Medellín'), 'grupos: queda en En viaje');
-  await page.click('.kcard-t >> text=Prueba Medellín');
-  await page.fill('form[data-form=grupo] input[name=destino]', 'Medellín y Guatapé');
-  await page.click('form[data-form=grupo] button[type=submit]');
-  ok(await avisa('guardados'), 'grupos: edita un grupo');
-  await esperar();
-  await page.click('[data-gvista=tiempo]');
-  while (!(await page.textContent('.weeknav b')).includes('diciembre 2026')) { await page.click('[data-gmes="1"]'); }
-  const barra = await page.textContent('.gantt-fila:has-text("Prueba Medellín") .gantt-barra');
-  ok(barra.includes('10 dic') && barra.includes('13 dic'), 'grupos: la línea de tiempo muestra la barra del 10 al 13 de diciembre');
-  await page.click('[data-gvista=tablero]');
-  await page.click('[data-accion=calClave]');
-  await esperar();
-  ok(/^[0-9a-f]{48}$/.test((await page.textContent('.clave dd.mono')).trim()), 'grupos: la administración ve la clave del calendario una vez');
-  await page.click('[data-accion=calCerrar]');
-  await page.click('.kcard-t >> text=Prueba Medellín');
-  await page.click('[data-gborrar=pedir]');
-  await page.click('[data-gborrar=si]');
-  ok(await avisa('eliminado'), 'grupos: elimina un grupo con confirmación');
-  await esperar();
-  ok(!(await enColumna('en_viaje', 'Prueba Medellín')), 'grupos: ya no aparece en el tablero');
-
-  // Una colaboradora también crea y mueve grupos, y no ve el botón del calendario
-  await entrar('daniela.castro@caminos.example');
-  await ir('grupos');
-  ok(!(await page.$('[data-accion=calClave]')), 'grupos: solo la administración ve «Conectar Google Calendar»');
-  await page.click('[data-accion=grupoNuevo]');
-  await page.fill('form[data-form=grupo] input[name=nombre]', 'Grupo de Daniela');
-  await page.click('form[data-form=grupo] button[type=submit]');
-  ok(await avisa('creado'), 'grupos: una colaboradora crea un grupo');
-  await esperar();
-  await page.locator('.kcard', { hasText: 'Colegio San José' }).locator('[data-gmover$="|1"]').click();
-  ok(await avisa('En viaje'), 'grupos: una colaboradora mueve un grupo creado por otra persona');
 
   ok(errores.length === 0, 'sin errores de página' + (errores.length ? ': ' + errores.join(' | ') : ''));
   await browser.close();

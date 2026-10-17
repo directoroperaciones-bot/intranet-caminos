@@ -75,10 +75,12 @@
       { id: 2, nombre: 'Caminos Documentos', descripcion: 'Cotizaciones, confirmaciones, vouchers e itinerarios con el diseño de Caminos.', icono: 'documentos', pie: 'Claude', url: 'https://claude.ai/artifact/WPzKkP7MwdKBaGrrGVpZ1Y', orden: 2, areas_visibles: null, activo: true },
       { id: 3, nombre: 'Cotizador OMNIAXIS', descripcion: 'Plantilla maestra del cotizador.', icono: 'cotizador', pie: 'Google Sheets', url: 'https://docs.google.com/spreadsheets/d/1n_wPCi90RUk69Yiclf-Uc1viJZIWQs7Qc1Z5k1ZUWM0/edit?gid=131584006#gid=131584006', orden: 3, areas_visibles: null, activo: true },
     ],
-    comunicados: [], comunicado_imagenes: [], comunicado_lecturas: [], solicitudes: [], solicitud_adjuntos: [], revisores: [],
-    grupos: [],
+    comunicados: [], comunicado_imagenes: [], comunicado_lecturas: [], solicitudes: [], solicitud_adjuntos: [], revisores: [], equipos: [],
   };
-  const SERIAL = ['sedes', 'areas', 'turnos', 'malla_historial', 'marcas', 'herramientas', 'comunicados', 'comunicado_imagenes', 'solicitudes', 'solicitud_adjuntos', 'grupos'];
+  // IP con la que «llega» el navegador de la demostración y llaves de los computadores autorizados
+  const IP_DEMO = '190.25.14.7';
+  const llavesEquipo = {};
+  const SERIAL = ['sedes', 'areas', 'turnos', 'malla_historial', 'marcas', 'herramientas', 'comunicados', 'comunicado_imagenes', 'solicitudes', 'solicitud_adjuntos', 'equipos'];
   const CLAVES = {
     malla: ['persona_id', 'fecha'], horario_base: ['persona_id', 'dia'], comunicado_lecturas: ['comunicado_id', 'persona_id'],
     revisores: ['persona_id'], configuracion: ['clave'], perfiles: ['id'], turnos: ['sede_id', 'codigo'], marcas: ['persona_id', 'fecha', 'tipo'],
@@ -115,6 +117,7 @@
     { clave: 'tolerancias', valor: { entrada_min: 5, almuerzo_min: 5 }, actualizado: ahoraISO() },
     { clave: 'meta_puntualidad', valor: { porcentaje: 95 }, actualizado: ahoraISO() },
     { clave: 'validar_ip', valor: { activo: false }, actualizado: ahoraISO() },
+    { clave: 'validar_equipo', valor: { activo: false }, actualizado: ahoraISO() },
     { clave: 'inicio_horarios', valor: { fecha: INICIO }, actualizado: ahoraISO() },
   ];
 
@@ -203,20 +206,6 @@
     db.marcas.forEach((x, i) => { x.id = i + 1; });
   })();
 
-  // Grupos de ejemplo (ficticios), con fechas alrededor de hoy
-  [
-    ['Peregrinación Fátima y Lourdes', 'Portugal y Francia', 20, 32, 28, 'carolina', 'confirmado', 'Aéreos Bogotá–Lisboa, hoteles 4★, traslados, guía en español y misas diarias.'],
-    ['Colegio San José · Grado 11', 'Cartagena', 5, 9, 42, 'daniela', 'documentacion', 'Bus, hotel todo incluido, city tour e Islas del Rosario.'],
-    ['Semana Santa en Tierra Santa', 'Israel y Jordania', 150, 162, 30, 'carolina', 'cotizando', 'Aéreos, hoteles, guía y entradas.'],
-    ['Empresa Andina · incentivo', 'San Andrés', -2, 3, 18, 'santiago', 'en_viaje', 'Aéreos, hotel y actividades.'],
-    ['Pasadía Chiquinquirá', 'Chiquinquirá', -20, -20, 35, 'valentina', 'finalizado', 'Bus, almuerzo y visita a la basílica.'],
-    ['Jubilados Club Social', 'Eje Cafetero', 45, 50, 22, 'felipe', 'cotizando', ''],
-    ['Grupo familiar Gómez', '', null, null, null, null, 'cotizando', ''],
-  ].forEach(([nombre, destino, a, b, pax, resp, estado, alcance], i) => db.grupos.push({
-    id: i + 1, nombre, destino, salida: a == null ? null : sumarDias(HOY, a), regreso: b == null ? null : sumarDias(HOY, b), pasajeros: pax,
-    responsable_id: resp ? ID[resp] : null, alcance, notas: '', estado, creado_por: ID.carolina, creado: sumarDias(HOY, -30) + 'T15:00:00Z',
-    actualizado: sumarDias(HOY, -2) + 'T15:00:00Z', actualizado_por: ID.carolina,
-  }));
   SERIAL.forEach((t) => { sigId[t] = db[t].reduce((m, r) => Math.max(m, r.id || 0), 0) + 1; });
 
   // ---------- Sesión y permisos (equivalentes a las funciones SQL) ----------
@@ -251,7 +240,7 @@
     solicitudes: (r) => puedeVerSolicitud(r.id),
     solicitud_adjuntos: (r) => puedeVerSolicitud(r.solicitud_id),
     revisores: (r) => r.persona_id === uid() || esGerencia(),
-    grupos: () => !!yo(),
+    equipos: (r) => esGerencia() || lideraSede(r.sede_id),
     herramientas: (r) => esGerencia() || (r.activo && (!r.areas_visibles || r.areas_visibles.includes((yo() || {}).area_id))),
   };
   // Reglas de escritura (USING y WITH CHECK)
@@ -272,7 +261,7 @@
     revisores: () => esGerencia(),
     perfiles: (r, op) => esAdmin() || (op === 'update' && gestionaCuentas() && r.id !== uid() && r.rol === 'colaborador' && !r.es_admin),
     malla_historial: () => false,
-    grupos: () => !!yo(),
+    equipos: () => false,
   };
   const DEFECTOS = {
     comunicados: () => ({ cuerpo: '', destino: 'todos', destino_id: null, requiere_confirmacion: true, fijado: false, creado: ahoraISO() }),
@@ -283,14 +272,12 @@
     revisores: () => ({ sede_id: null, nivel: 'aprobar' }),
     horario_base: () => ({}),
     configuracion: () => ({ actualizado: ahoraISO() }),
-    grupos: () => ({ destino: '', salida: null, regreso: null, pasajeros: null, responsable_id: null, alcance: '', notas: '', estado: 'cotizando', creado_por: uid(), creado: ahoraISO(), actualizado: ahoraISO(), actualizado_por: uid() }),
   };
   function revisarRestricciones(tabla, r) {
     if (tabla === 'turnos' && ((!r.entrada) !== (!r.salida) || (!r.salida_almuerzo) !== (!r.regreso_almuerzo))) return err('new row for relation "turnos" violates check constraint', '23514');
     if (tabla === 'solicitudes' && (r.hasta < r.desde || (!r.hora_desde) !== (!r.hora_hasta))) return err('new row for relation "solicitudes" violates check constraint', '23514');
     if (tabla === 'comunicados' && (!r.titulo || r.titulo.length > 140)) return err('new row for relation "comunicados" violates check constraint', '23514');
     if (tabla === 'revisores' && (!r.tipos || !r.tipos.length)) return err('new row for relation "revisores" violates check constraint', '23514');
-    if (tabla === 'grupos' && (!String(r.nombre || '').trim() || (r.salida && r.regreso && r.regreso < r.salida) || !['cotizando', 'confirmado', 'documentacion', 'en_viaje', 'finalizado'].includes(r.estado))) return err('new row for relation "grupos" violates check constraint', '23514');
     return null;
   }
   const mismaClave = (tabla, a, b) => (CLAVES[tabla] || ['id']).every((k) => String(a[k]) === String(b[k]));
@@ -409,7 +396,7 @@
           const e = revisarRestricciones(tabla, nueva);
           if (e) return { data: null, error: e };
         }
-        objetivo.forEach((r) => { const antes = clonar(r); Object.assign(r, clonar(this.datos)); if (tabla === 'grupos') Object.assign(r, { actualizado: ahoraISO(), actualizado_por: uid() }); if (tabla === 'malla') historial('update', antes, r); });
+        objetivo.forEach((r) => { const antes = clonar(r); Object.assign(r, clonar(this.datos)); if (tabla === 'malla') historial('update', antes, r); });
         return this.devolver ? this.resultado(objetivo) : { data: null, error: null };
       }
       if (this.op === 'delete') {
@@ -426,20 +413,23 @@
   // ---------- RPC ----------
   const NOMBRES_PASO = { entrada: 'la entrada', salida_almuerzo: 'la salida a almorzar', regreso_almuerzo: 'el regreso de almuerzo', salida: 'la salida' };
   const RPC = {
-    nueva_clave_calendario() {
-      if (!esAdmin()) throw err('Solo la administración puede crear la clave del calendario.');
-      return Array.from({ length: 48 }, () => '0123456789abcdef'[Math.floor(Math.random() * 16)]).join('');
-    },
-    marcar({ p_tipo }) {
+    marcar({ p_tipo, p_equipo }) {
       const p = yo();
       if (!p) throw err('Tu cuenta no está activa.');
       const hoy = fechaHoy();
       const ya = (t) => db.marcas.some((m) => m.persona_id === p.id && m.fecha === hoy && m.tipo === t);
-      if (cfg('validar_ip') && cfg('validar_ip').activo) throw err('Solo puedes marcar desde la red de la oficina.');
+      const sede = db.sedes.find((x) => x.id === p.sede_id);
+      if (cfg('validar_ip') && cfg('validar_ip').activo && !(sede.ips_oficina || []).includes(IP_DEMO)) throw err('Solo puedes marcar desde la red de la oficina.');
+      let eq = null;
+      if (cfg('validar_equipo') && cfg('validar_equipo').activo) {
+        eq = db.equipos.find((e) => e.activo && e.sede_id === p.sede_id && p_equipo && llavesEquipo[e.id] === p_equipo);
+        if (!eq) throw err('Este equipo no está autorizado para marcar. Marca desde un computador de la oficina.');
+        Object.assign(eq, { ultimo_uso: ahoraISO(), ultima_ip: IP_DEMO });
+      }
       if ((p_tipo === 'salida_almuerzo' || p_tipo === 'salida') && !ya('entrada')) throw err('Primero marca la entrada.');
       if (p_tipo === 'regreso_almuerzo' && !ya('salida_almuerzo')) throw err('Primero marca la salida a almorzar.');
       if (ya(p_tipo)) throw err(`Ya marcaste ${NOMBRES_PASO[p_tipo]} hoy.`);
-      const m = { id: db.marcas.length + 1, persona_id: p.id, fecha: hoy, tipo: p_tipo, hora: ahoraISO(), ip: null, corregida_por: null };
+      const m = { id: db.marcas.length + 1, persona_id: p.id, fecha: hoy, tipo: p_tipo, hora: ahoraISO(), ip: IP_DEMO, equipo_id: eq ? eq.id : null, corregida_por: null };
       db.marcas.push(m);
       return m;
     },
@@ -458,6 +448,32 @@
     ausencias_aprobadas({ p_desde, p_hasta }) {
       return db.solicitudes.filter((s) => s.estado === 'aprobada' && !s.hora_desde && s.desde <= p_hasta && s.hasta >= p_desde && (s.persona_id === uid() || lideraSede(perfil(s.persona_id).sede_id)))
         .map((s) => ({ persona_id: s.persona_id, tipo: s.tipo, desde: s.desde, hasta: s.hasta }));
+    },
+    mi_ip() { return esGerencia() ? IP_DEMO : null; },
+    autorizar_equipo({ p_nombre, p_sede }) {
+      if (!esGerencia()) throw err('Solo la gerencia autoriza computadores.');
+      const sede = db.sedes.find((x) => x.id === p_sede);
+      if (!sede) throw err('La sede no existe.');
+      if ((sede.ips_oficina || []).length && !sede.ips_oficina.includes(IP_DEMO)) throw err('Autoriza el computador desde la red de la oficina.');
+      const nombre = String(p_nombre || '').trim();
+      if (!nombre || nombre.length > 60) throw err('new row for relation "equipos" violates check constraint', '23514');
+      const e = { id: db.equipos.length + 1, sede_id: p_sede, nombre, activo: true, creado: ahoraISO(), creado_por: uid(), ultimo_uso: null, ultima_ip: IP_DEMO };
+      db.equipos.push(e);
+      llavesEquipo[e.id] = Array.from({ length: 4 }, () => Math.random().toString(16).slice(2, 18)).join('').padEnd(64, '0').slice(0, 64);
+      return { id: e.id, llave: llavesEquipo[e.id] };
+    },
+    quitar_equipo({ p_id }) {
+      if (!esGerencia()) throw err('Solo la gerencia quita computadores.');
+      const e = db.equipos.find((x) => x.id === p_id);
+      if (e) e.activo = false;
+      return null;
+    },
+    fijar_ips_oficina({ p_sede, p_ips }) {
+      if (!esGerencia()) throw err('Solo la gerencia cambia la IP de la oficina.');
+      const sede = db.sedes.find((x) => x.id === p_sede);
+      if (!sede) throw err('La sede no existe.');
+      sede.ips_oficina = (p_ips || []).slice();
+      return sede;
     },
     es_admin() { return esAdmin(); },
     puede_gestionar_cuentas() { return gestionaCuentas(); },

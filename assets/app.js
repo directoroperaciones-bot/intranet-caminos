@@ -103,6 +103,8 @@
     libro: '<path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/>',
     volver: '<path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/>',
     cotizador: '<rect width="16" height="20" x="4" y="2" rx="2"/><line x1="8" x2="16" y1="6" y2="6"/><line x1="16" x2="16" y1="14" y2="18"/><path d="M16 10h.01"/><path d="M12 10h.01"/><path d="M8 10h.01"/><path d="M12 14h.01"/><path d="M8 14h.01"/><path d="M12 18h.01"/><path d="M8 18h.01"/>',
+    escudo: '<path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/>',
+    monitor: '<rect width="20" height="14" x="2" y="3" rx="2"/><line x1="8" x2="16" y1="21" y2="21"/><line x1="12" x2="12" y1="17" y2="21"/>',
     usuarioMas: '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><line x1="19" x2="19" y1="8" y2="14"/><line x1="22" x2="16" y1="11" y2="11"/>',
   };
   const ico = (n, cls) => `<svg class="i${cls ? ' ' + cls : ''}" viewBox="0 0 24 24" aria-hidden="true">${IC[n] || ''}</svg>`;
@@ -156,6 +158,7 @@
 
   // ---------- Estado ----------
   const S = {
+    ofi: { ip: null, equipos: [], sede: null, quitar: null, nombre: '' },
     pantalla: 'cargando', error: '', correoLogin: '', claveVoluntaria: false, ocupado: '', recuperacion: false, olvido: { enviado: false, correo: '' },
     usuario: null, perfil: null, sedes: [], areas: [], turnos: [], herramientas: [], personas: [], config: {}, revisores: [],
     view: 'inicio', menu: false, cargandoVista: false, errorVista: '',
@@ -168,7 +171,6 @@
     com: { lista: [], imgs: [], lect: [], filtro: 'todos', q: '', borrador: { confirmar: true }, archivos: [], borrar: null },
     lb: null,
     sol: { lista: [], adj: [], tipo: 'vacaciones', borrador: {}, archivos: [], cancelar: null, coment: {} },
-    grupos: { lista: [], vista: 'tablero', mes: '', abierto: null, borrador: {}, borrar: null, clave: null },
   };
 
   // ---------- Permisos de interfaz (solo muestran u ocultan) ----------
@@ -198,6 +200,19 @@
   const tzPersona = (pid) => tzSede((persona(pid) || {}).sede_id);
   const miTz = () => tzSede(P().sede_id);
   const variasSedes = () => S.sedes.length > 1;
+  const validarIp = () => !!(S.config.validar_ip && S.config.validar_ip.activo);
+  const validarEquipo = () => !!(S.config.validar_equipo && S.config.validar_equipo.activo);
+  // Llave del computador autorizado: vive en este navegador (en la base solo queda su huella)
+  const LLAVE_EQUIPO = 'caminos-intranet-equipo';
+  function equipoLocal() {
+    try { const v = JSON.parse(localStorage.getItem(LLAVE_EQUIPO) || 'null'); return v && v.llave ? v : null; } catch (e) { return null; }
+  }
+  function guardarEquipoLocal(v) {
+    try {
+      if (v) localStorage.setItem(LLAVE_EQUIPO, JSON.stringify(v)); else localStorage.removeItem(LLAVE_EQUIPO);
+      return !v || (equipoLocal() || {}).llave === v.llave;
+    } catch (e) { return false; }
+  }
   const activas = () => S.personas.filter((p) => p.activo);
 
   // ---------- Turnos ----------
@@ -522,13 +537,13 @@
   // ---------- Marco de la aplicación ----------
   const TABS = [
     { id: 'inicio', nombre: 'Inicio', ver: () => true },
-    { id: 'grupos', nombre: 'Grupos', ver: () => true },
     { id: 'malla', nombre: 'Malla', ver: () => true },
     { id: 'comunicados', nombre: 'Comunicados', ver: () => true, badge: () => sinConfirmar().length },
     { id: 'asistencia', nombre: 'Asistencia', ver: () => esLider() },
     { id: 'informes', nombre: 'Informes', ver: () => esLider() },
     { id: 'solicitudes', nombre: 'Solicitudes', ver: () => verSolicitudes(), badge: () => porRevisar().length },
     { id: 'equipo', nombre: 'Equipo', ver: () => gestionaCuentas() },
+    { id: 'oficina', nombre: 'Oficina', ver: () => esGerencia() },
   ];
   const puedeVer = (v) => v === 'guia' || TABS.some((t) => t.id === v && t.ver());
 
@@ -568,13 +583,13 @@
 
   function vistaActual() {
     switch (S.view) {
-      case 'grupos': return gruposView();
       case 'malla': return mallaView();
       case 'comunicados': return comunicadosView();
       case 'asistencia': return asistenciaView();
       case 'informes': return informesView();
       case 'solicitudes': return solicitudesView();
       case 'equipo': return equipoView();
+      case 'oficina': return oficinaView();
       case 'guia': return guiaView();
       default: return inicioView();
     }
@@ -674,7 +689,8 @@
     const sig = completa ? null : pasos.find((x) => !marcas[x.tipo]);
     const descanso = t && !conHorario(t);
     const sede = sedeDe(p.sede_id);
-    const validarIp = S.config.validar_ip && S.config.validar_ip.activo;
+    const soloOficina = validarIp() || validarEquipo();
+    const sinLlave = validarEquipo() && !equipoLocal();
 
     let aviso = '';
     if (aus) {
@@ -702,11 +718,13 @@
     let boton = '';
     if (mostrarBoton) {
       if (completa) boton = `<div class="completa">${ico('check')}Jornada completa</div>`;
-      else if (sig) {
+      else if (sig && sinLlave) {
+        boton = `<div class="notice warn">${ico('monitor')}<div><b>Este equipo no está autorizado para marcar.</b><p>Marca desde un computador de la oficina${esc(sede ? ' ' + sede.nombre : '')}.</p></div></div>`;
+      } else if (sig) {
         boton = `<button type="button" class="btn mark-btn" data-marcar="${sig.tipo}"${ocupado('marcar')}>${S.ocupado === 'marcar' ? 'Marcando…' : esc(sig.boton)}</button>`;
         if (sig.tipo === 'salida_almuerzo') boton += `<button type="button" class="btn txt sm" data-marcar="salida"${ocupado('marcar')}>Hoy no almuerzo · marcar salida</button>`;
       }
-      boton += `<p class="pass-pie">${ico('reloj')}${validarIp ? `Solo desde la oficina ${esc(sede ? sede.nombre : '')}` : 'La hora la pone el servidor'}</p>`;
+      boton += `<p class="pass-pie">${ico('reloj')}${soloOficina ? `Solo desde ${validarEquipo() ? 'computadores autorizados de ' : ''}la oficina ${esc(sede ? sede.nombre : '')}` : 'La hora la pone el servidor'}</p>`;
     }
 
     return `<article class="pass" aria-label="Pase de jornada">
@@ -1736,6 +1754,81 @@
           <tbody id="lista-equipo">${filasEquipo(lista)}</tbody></table></div></section>`;
   }
 
+  // ---------- Oficina: desde dónde se puede marcar (gerencia) ----------
+  async function cargarOficina() {
+    const [ip, equipos, sedes] = await Promise.all([
+      q(sb.rpc('mi_ip')),
+      q(sb.from('equipos').select('id,sede_id,nombre,activo,creado,ultimo_uso,ultima_ip').order('creado')),
+      q(sb.from('sedes').select('*').order('id')),
+    ]);
+    S.ofi.ip = ip || null;
+    S.ofi.equipos = equipos || [];
+    S.sedes = sedes || S.sedes;
+    if (!S.ofi.sede || !sedeDe(S.ofi.sede)) S.ofi.sede = P().sede_id;
+  }
+
+  function oficinaView() {
+    const O = S.ofi, sede = sedeDe(O.sede) || {}, tz = miTz();
+    const ips = sede.ips_oficina || [];
+    const enOficina = !!O.ip && ips.includes(O.ip);
+    const equipos = O.equipos.filter((e) => e.activo && e.sede_id === sede.id);
+    const local = equipoLocal();
+    const este = local && equipos.find((e) => e.id === local.id);
+    const elegirSede = variasSedes() ? `<label class="field"><span>Sede</span><select data-ofisede aria-label="Sede">${S.sedes.map((x) => `<option value="${x.id}"${x.id === sede.id ? ' selected' : ''}>${esc(x.nombre)}</option>`).join('')}</select></label>` : '';
+
+    const red = `<section class="modcard card">
+        <div class="modcard-h">
+          <div><span class="eyebrow">Control 1</span><h2>Solo desde la red de la oficina</h2><p class="hint">${validarIp() ? 'Activo: solo se puede marcar con el internet de la oficina. Con datos del celular u otra red, no.' : 'Apagado: se puede marcar desde cualquier internet.'}</p></div>
+          <button type="button" class="switch" role="switch" aria-checked="${validarIp()}" data-accion="validarIp"${!validarIp() && !ips.length ? ' disabled title="Primero registra la IP de la oficina"' : ocupado('ofi')}><span></span><b>${validarIp() ? 'Activo' : 'Apagado'}</b></button>
+        </div>
+        ${elegirSede}
+        <div class="ofi-ip"><span class="hint">Tu conexión ahora</span><b class="mono">${esc(O.ip || 'No se pudo leer')}</b>
+          ${O.ip ? (enOficina ? '<span class="chip ok">Es la IP de la oficina</span>' : `<button type="button" class="btn sm" data-accion="ipAgregar"${ocupado('ofi')}>${ico('mas')}Registrar como IP de la oficina</button>`) : ''}</div>
+        <p class="hint">Haz esto desde un computador conectado al internet de la oficina. La IP es la dirección pública del internet de la oficina: todos los equipos conectados allí salen con la misma.</p>
+        <h3>IP registradas${sede.nombre && variasSedes() ? ` · ${esc(sede.nombre)}` : ''}</h3>
+        ${ips.length ? `<ul class="ofi-lista">${ips.map((ip) => `<li><span class="mono">${esc(ip)}</span><button type="button" class="btn txt sm" data-accion="ipQuitar" data-ip="${esc(ip)}"${ocupado('ofi')}>Quitar</button></li>`).join('')}</ul>` : '<p class="vacio">Aún no hay ninguna IP registrada.</p>'}
+        <div class="notice">${ico('alerta')}<div><p>Si el proveedor de internet cambia la IP de la oficina, nadie podrá marcar hasta que registres la nueva aquí. Pide al proveedor una <strong>IP fija</strong>. Ojo: un celular conectado al Wi-Fi de la oficina sale con la misma IP; para evitarlo, activa también el control 2.</p></div></div>
+      </section>`;
+
+    const filas = O.equipos.filter((e) => e.sede_id === sede.id).map((e) => {
+      const confirmar = O.quitar === e.id;
+      const acc = !e.activo ? '<span class="chip mute">Quitado</span>'
+        : confirmar ? `<span class="confirmar">¿Quitar? Ya no podrá marcar.<span><button type="button" class="btn sm danger" data-accion="quitarEquipoSi"${ocupado('ofi')}>Sí</button><button type="button" class="btn txt sm" data-accion="quitarEquipoNo">No</button></span></span>`
+        : `<button type="button" class="btn txt sm" data-accion="quitarEquipo" data-id="${e.id}"${ocupado('ofi')}>Quitar</button>`;
+      return `<tr class="${e.activo ? '' : 'inactiva'}">
+          <th scope="row"><b>${esc(e.nombre)}</b>${este && este.id === e.id ? ' <span class="chip ok xs">Este computador</span>' : ''}</th>
+          <td>${e.ultimo_uso ? esc(fechaHora(e.ultimo_uso, tz)) : '<span class="hint">Aún no marca</span>'}</td>
+          <td class="td-acc">${acc}</td>
+        </tr>`;
+    }).join('');
+    const compu = `<section class="modcard card">
+        <div class="modcard-h">
+          <div><span class="eyebrow">Control 2</span><h2>Solo desde computadores autorizados</h2><p class="hint">${validarEquipo() ? 'Activo: solo se marca desde los computadores de esta lista. Celulares y otros computadores no pueden.' : 'Apagado: se puede marcar desde cualquier equipo.'}</p></div>
+          <button type="button" class="switch" role="switch" aria-checked="${validarEquipo()}" data-accion="validarEquipo"${!validarEquipo() && !equipos.length ? ' disabled title="Primero autoriza al menos un computador"' : ocupado('ofi')}><span></span><b>${validarEquipo() ? 'Activo' : 'Apagado'}</b></button>
+        </div>
+        ${este ? `<div class="notice info">${ico('monitor')}<span>Este computador está autorizado como <strong>${esc(este.nombre)}</strong>.</span></div>`
+          : `<div class="ofi-autorizar"><label class="field"><span>Nombre de este computador</span><input id="ofi-nombre" maxlength="60" value="${esc(O.nombre)}" placeholder="Ej.: Recepción, Ventas 1" autocomplete="off"></label>
+            <button type="button" class="btn" data-accion="autorizarEquipo"${ocupado('ofi')}>${ico('monitor')}Autorizar este computador</button></div>`}
+        <p class="hint">Entra a la intranet con tu cuenta <b>en cada computador de la oficina</b> y toca «Autorizar este computador». El navegador guarda una llave secreta; si se borran sus datos, se usa otro navegador o una ventana de incógnito, hay que autorizarlo otra vez.</p>
+        <div class="tablewrap card flush"><table class="perm"><thead><tr><th scope="col">Computador</th><th scope="col">Última marca</th><th scope="col">Acciones</th></tr></thead>
+          <tbody>${filas || '<tr><td colspan="3" class="vacio">Aún no hay computadores autorizados.</td></tr>'}</tbody></table></div>
+      </section>`;
+
+    const remoto = `<section class="card ofi-remoto">
+        <span class="eyebrow">Fuera de la intranet</span><h2>Programas de acceso remoto</h2>
+        <p>Con AnyDesk, TeamViewer, Chrome Remote Desktop o Escritorio remoto de Windows, alguien desde su casa puede manejar un computador de la oficina. Para la intranet eso se ve igual que estar sentado allí: ninguna página web puede detectarlo con certeza. Se evita con medidas en los computadores:</p>
+        <ul>
+          <li>Desinstalar esos programas y quitar a los asesores el permiso de administrador para instalar otros.</li>
+          <li>Apagar el Escritorio remoto de Windows (Configuración → Sistema → Escritorio remoto).</li>
+          <li>Bloquear en el router de la oficina los sitios de esos programas (anydesk.com, teamviewer.com, remotedesktop.google.com).</li>
+          <li>Revisar cada mes la columna «Última marca» y las marcas a horas raras.</li>
+        </ul>
+      </section>`;
+
+    return encabezado('Seguridad de la marcación', '<em>Oficina</em>', 'Decide desde dónde se puede marcar la jornada. Lo más seguro es activar los dos controles.')
+      + red + compu + remoto;
+  }
+
   function filasEquipo(lista) {
     const E = S.equipo;
     if (!lista.length) return `<tr><td colspan="6" class="vacio">Nadie coincide con la búsqueda.</td></tr>`;
@@ -1821,22 +1914,16 @@
           <li>Entra con tu <b>correo corporativo</b> y la <b>contraseña temporal</b> que te dio la administración.</li>
           <li>La intranet te pide crear tu propia contraseña, de 8 caracteres o más.</li>
           <li>Lee y acepta la autorización de tratamiento de datos.</li>
-        </ol><p>¿Olvidaste la contraseña? Pídele a la administración${S.personas.some((p) => p.rol === 'supervisor') ? ' o a un supervisor' : ''} una nueva. Para cambiarla cuando quieras, toca tu avatar y elige «Cambiar contraseña».</p>` },
+        </ol><p>¿Olvidaste la contraseña? En la entrada toca «¿Olvidaste tu contraseña?» y te llega un enlace al correo para crear una nueva. También puedes pedirle una a la administración${S.personas.some((p) => p.rol === 'supervisor') ? ' o a un supervisor' : ''}. Para cambiarla cuando quieras, toca tu avatar y elige «Cambiar contraseña».</p>` },
       { id: 'marcar', titulo: 'Marcar la jornada', ver: true, html: `<p>En Inicio está tu <b>pase de jornada</b>. Tiene cuatro pasos y un solo botón grande con el que sigue:</p>
         <ul class="pasos-guia">${PASOS.map((x) => `<li><span class="leg-cod">${x.cod}</span>${x.nombre}</li>`).join('')}</ul>
         <ul>
           <li>La hora la pone el servidor: no importa la hora de tu celular o computador.</li>
+          ${validarIp() || validarEquipo() ? `<li>Solo se puede marcar ${validarEquipo() ? 'desde los <b>computadores autorizados</b> de la oficina' : 'con el <b>internet de la oficina</b>'}. Desde el celular o desde la casa, no.</li>` : ''}
           <li>Tienes <b>${t.entrada} minutos</b> de gracia en la entrada y <b>${t.almuerzo} minutos</b> en el almuerzo.</li>
           <li>Si tu turno no tiene almuerzo (por ejemplo, los sábados), solo marcas entrada y salida.</li>
           <li>Si hoy no almuerzas, usa «Hoy no almuerzo · marcar salida».</li>
           <li>Si tienes vacaciones, permiso o incapacidad aprobados, ese día no tienes que marcar.</li>
-        </ul>` },
-      { id: 'grupos', titulo: 'Grupos de viaje', ver: true, html: `<ul>
-          <li><b>Tablero:</b> cada grupo es una tarjeta en una de cinco columnas: Cotizando, Confirmado, Documentación lista, En viaje y Finalizado. Arrástrala a otra columna o usa las flechas de la tarjeta (en el celular, desliza para ver las demás columnas).</li>
-          <li><b>Nuevo grupo:</b> nombre, destino, fechas de salida y regreso, pasajeros, responsable, alcance y notas internas. Toca el nombre de una tarjeta para cambiarla o eliminarla.</li>
-          <li><b>Línea de tiempo:</b> cada grupo con fechas es una barra del día de salida al de regreso; cambia de mes con las flechas.</li>
-          <li><b>Google Calendar:</b> los grupos con fechas aparecen solos en el calendario compartido «Grupos Caminos» (puede tardar unos minutos). Las notas internas no van al calendario.</li>
-          <li>Todo el equipo puede crear, mover, cambiar y eliminar grupos; cada tarjeta guarda quién hizo el último cambio.</li>
         </ul>` },
       { id: 'malla', titulo: 'Malla, comunicados y herramientas', ver: true, html: `<ul>
           <li><b>Malla:</b> el horario de cada persona por semana. Las celdas con borde de color son cambios puntuales de ese día.</li>
@@ -1866,7 +1953,7 @@
           ${esAdmin() ? '<li><b>Administración:</b> en «Equipo» creas cuentas de cualquier rol, asignas roles y desactivas cuentas. Asigna «Supervisor» a quien administrará cuentas y horarios sin darle poderes de gerencia.</li>' : ''}
         </ul>` },
       { id: 'faq', titulo: 'Preguntas frecuentes', ver: true, html: `<dl class="faq">
-          <dt>¿Puedo marcar desde el celular?</dt><dd>${ip ? 'Solo si estás conectada a la red de la oficina. Desde datos móviles o desde otra red, la intranet no deja marcar.' : 'Sí, desde cualquier dispositivo. La hora la pone el servidor.'}</dd>
+          <dt>¿Puedo marcar desde el celular?</dt><dd>${validarEquipo() ? 'No. Solo desde los computadores de la oficina que autorizó la gerencia.' : ip ? 'Solo si estás conectada a la red de la oficina. Desde datos móviles o desde otra red, la intranet no deja marcar.' : 'Sí, desde cualquier dispositivo. La hora la pone el servidor.'}</dd>
           <dt>Me equivoqué al marcar.</dt><dd>Avísale a la líder de tu sede para que lo revise.</dd>
           <dt>No veo los cambios nuevos.</dt><dd>Recarga la página con Ctrl+F5 (en el celular, cierra y abre la pestaña).</dd>
           <dt>Dice «No hay conexión con el servidor».</dt><dd>Prueba en una ventana de incógnito u otro navegador. Si sigue igual, puede que la red o un antivirus estén bloqueando la intranet.</dd>
@@ -1879,203 +1966,10 @@
         </div>`;
   }
 
-  // ---------- Grupos (tablero, línea de tiempo y calendario) ----------
-  // Todo el equipo activo crea, mueve y borra grupos. Google Calendar los recibe
-  // con un programa de Google (calendario/LEEME.md) que usa grupos_calendario().
-  const COLUMNAS = [
-    { id: 'cotizando', nombre: 'Cotizando', cls: 'c1' },
-    { id: 'confirmado', nombre: 'Confirmado', cls: 'c2' },
-    { id: 'documentacion', nombre: 'Documentación lista', cls: 'c3' },
-    { id: 'en_viaje', nombre: 'En viaje', cls: 'c4' },
-    { id: 'finalizado', nombre: 'Finalizado', cls: 'c5' },
-  ];
-  const columna = (id) => COLUMNAS.find((c) => c.id === id) || COLUMNAS[0];
-  const grupo = (id) => S.grupos.lista.find((g) => String(g.id) === String(id));
-  const diasEntre = (a, b) => Math.round((new Date(b + 'T12:00:00Z') - new Date(a + 'T12:00:00Z')) / 864e5);
-  function fechasGrupo(g) {
-    if (!g.salida) return 'Sin fechas';
-    if (!g.regreso) return `Sale el ${fechaCorta(g.salida)}`;
-    const n = diasEntre(g.salida, g.regreso) + 1;
-    return `${fechaCorta(g.salida)} → ${fechaCorta(g.regreso)} · ${plural(n, 'día', 'días')}`;
-  }
-
-  async function cargarGrupos() {
-    S.grupos.lista = await todas(() => sb.from('grupos').select('*').order('salida', { ascending: true }).order('id'));
-    if (!S.grupos.mes) S.grupos.mes = fechaEn(miTz()).slice(0, 7);
-  }
-
-  function gruposView() {
-    const G = S.grupos;
-    const nuevo = `<button type="button" class="btn" data-accion="grupoNuevo"${G.abierto === 'nuevo' ? ' disabled' : ''}>${ico('mas')}Nuevo grupo</button>`;
-    const barra = `<div class="toolbar">
-        <div class="seg" role="group" aria-label="Vista">${[['tablero', 'Tablero'], ['tiempo', 'Línea de tiempo']].map(([v, n]) => `<button type="button" data-gvista="${v}" aria-pressed="${G.vista === v}">${n}</button>`).join('')}</div>
-        <span class="hint">${plural(G.lista.length, 'grupo', 'grupos')}</span>
-        ${esAdmin() ? `<button type="button" class="btn ghost sm" data-accion="calClave"${ocupado('calClave')}>${ico('calendario')}Conectar Google Calendar</button>` : ''}
-      </div>`;
-    const clave = G.clave ? `<section class="clave card" aria-live="polite">
-        <span class="eyebrow">Google Calendar</span><h2>Clave del calendario</h2>
-        <p class="hint">Pégala en el programa de Google (paso 4 de <b>calendario/LEEME.md</b>). Se muestra <b>una sola vez</b> y la clave anterior dejó de servir.</p>
-        <dl><div><dt>Clave</dt><dd class="mono">${esc(G.clave)}</dd></div></dl>
-        <div class="acc"><button type="button" class="btn" data-copiar="calendario">${ico('copiar')}Copiar</button><button type="button" class="btn ghost" data-accion="calCerrar">Listo</button></div>
-      </section>` : '';
-    return encabezado('Viajes', '<em>Grupos</em>', 'Cada grupo es una tarjeta: muévela de columna a medida que avanza. Los grupos con fechas aparecen en la línea de tiempo y en el calendario «Grupos Caminos» de Google.', nuevo)
-      + clave + (G.abierto ? grupoFormView() : '') + barra
-      + (G.vista === 'tiempo' ? lineaTiempoView() : tableroView());
-  }
-
-  function tarjetaGrupo(g) {
-    const i = COLUMNAS.findIndex((c) => c.id === g.estado);
-    const resp = g.responsable_id && persona(g.responsable_id);
-    return `<article class="kcard" draggable="true" data-arrastrar="${g.id}">
-        <button type="button" class="kcard-t" data-gabrir="${g.id}">${esc(g.nombre)}</button>
-        ${g.destino ? `<span class="kcard-d">${esc(g.destino)}</span>` : ''}
-        <span class="kcard-f">${ico('calendario')}${esc(fechasGrupo(g))}</span>
-        <div class="kcard-pie">
-          <span>${g.pasajeros != null ? `${ico('usuarios')}${g.pasajeros}` : ''}${resp ? `<span class="avatar sm" title="${esc(resp.nombre)}">${esc(initials(resp.nombre))}</span>` : ''}</span>
-          <span class="kcard-mover">
-            <button type="button" class="btn txt sm" data-gmover="${g.id}|-1" aria-label="Mover a ${esc(i > 0 ? COLUMNAS[i - 1].nombre : '')}"${i <= 0 ? ' disabled' : ''}>${ico('izq')}</button>
-            <button type="button" class="btn txt sm" data-gmover="${g.id}|1" aria-label="Mover a ${esc(i < COLUMNAS.length - 1 ? COLUMNAS[i + 1].nombre : '')}"${i >= COLUMNAS.length - 1 ? ' disabled' : ''}>${ico('der')}</button>
-          </span>
-        </div>
-      </article>`;
-  }
-
-  function tableroView() {
-    return `<div class="kanban">${COLUMNAS.map((c) => {
-      const lista = S.grupos.lista.filter((g) => g.estado === c.id);
-      return `<section class="kcol ${c.cls}" data-soltar="${c.id}" aria-label="${esc(c.nombre)}">
-          <h2 class="kcol-h"><span>${esc(c.nombre)}</span><span class="badge">${lista.length}</span></h2>
-          <div class="kcol-l">${lista.length ? lista.map(tarjetaGrupo).join('') : '<p class="vacio">Sin grupos</p>'}</div>
-        </section>`;
-    }).join('')}</div>`;
-  }
-
-  function lineaTiempoView() {
-    const G = S.grupos, mes = G.mes, desde = mes + '-01', hasta = ultimoDia(mes), n = +hasta.slice(8, 10);
-    const hoy = fechaEn(miTz());
-    const dias = Array.from({ length: n }, (_, i) => sumarDias(desde, i));
-    const enMes = G.lista.filter((g) => g.salida && g.salida <= hasta && (g.regreso || g.salida) >= desde);
-    const sinFecha = G.lista.filter((g) => !g.salida);
-    const cols = `--dias: ${n}`;
-    const cab = `<div class="gantt-fila gantt-cab" style="${cols}"><span></span>${dias.map((d) => `<span class="${d === hoy ? 'hoy' : ''}${diaSemana(d) >= 6 ? ' finde' : ''}">${+d.slice(8, 10)}</span>`).join('')}</div>`;
-    const filas = enMes.map((g) => {
-      const a = g.salida < desde ? 1 : +g.salida.slice(8, 10);
-      const fin = g.regreso || g.salida;
-      const b = fin > hasta ? n : +fin.slice(8, 10);
-      const c = columna(g.estado);
-      return `<div class="gantt-fila" style="${cols}">
-          <button type="button" class="gantt-nom" data-gabrir="${g.id}"><b>${esc(g.nombre)}</b><small>${esc([g.destino, c.nombre].filter(Boolean).join(' · '))}</small><small class="gantt-fechas">${esc(fechasGrupo(g))}</small></button>
-          <span class="gantt-barra ${c.cls}${g.salida < desde ? ' sigue-antes' : ''}${fin > hasta ? ' sigue-despues' : ''}" style="grid-column: ${a + 1} / ${b + 2}" title="${esc(g.nombre + ' · ' + fechasGrupo(g))}">${esc(fechasGrupo(g))}</span>
-        </div>`;
-    }).join('');
-    const [y, m] = mes.split('-').map(Number);
-    return `<div class="weeknav">
-        <button type="button" class="btn ghost sm" data-gmes="-1" aria-label="Mes anterior">${ico('izq')}</button>
-        <b>${esc(nombreMes(mes))}</b>
-        <button type="button" class="btn ghost sm" data-gmes="1" aria-label="Mes siguiente">${ico('der')}</button>
-        ${mes !== hoy.slice(0, 7) ? '<button type="button" class="btn txt sm" data-gmes="0">Este mes</button>' : ''}
-      </div>
-      <div class="card flush gantt">${enMes.length ? cab + filas : `<p class="vacio">No hay grupos de viaje en ${esc(MESES[m - 1])} de ${y}.</p>`}</div>
-      <div class="leyenda gantt-leyenda">${COLUMNAS.map((c) => `<span><i class="gantt-punto ${c.cls}"></i>${esc(c.nombre)}</span>`).join('')}</div>
-      ${sinFecha.length ? `<p class="hint">Sin fechas todavía: ${sinFecha.map((g) => `<button type="button" class="enlace" data-gabrir="${g.id}">${esc(g.nombre)}</button>`).join(', ')}.</p>` : ''}`;
-  }
-
-  function grupoFormView() {
-    const G = S.grupos, b = G.borrador, editar = G.abierto !== 'nuevo';
-    const g = editar ? grupo(G.abierto) : null;
-    const confirmar = editar && G.borrar === G.abierto;
-    const meta = g ? `<p class="hint">Creado por ${esc(nombreDe(g.creado_por))}${g.actualizado_por ? ` · último cambio de ${esc(nombreDe(g.actualizado_por))}, ${esc(fechaHora(g.actualizado, miTz()))}` : ''}.</p>` : '';
-    return `<section class="card grupo-form">
-        <form data-form="grupo" data-borrador="grupo" novalidate>
-          <span class="eyebrow">${editar ? 'Editar grupo' : 'Nuevo grupo'}</span><h2>${editar ? esc(g ? g.nombre : '') : 'Crear grupo'}</h2>
-          ${S.error ? `<p class="err" role="alert">${esc(S.error)}</p>` : ''}
-          <div class="form-grid">
-            <label class="field"><span>Nombre del grupo</span><input name="nombre" value="${esc(b.nombre || '')}" maxlength="120" required autocomplete="off" placeholder="Peregrinación Fátima y Lourdes"></label>
-            <label class="field"><span>Destino</span><input name="destino" value="${esc(b.destino || '')}" maxlength="120" autocomplete="off" placeholder="Portugal y Francia"></label>
-            <label class="field"><span>Salida</span><input name="salida" type="date" value="${esc(b.salida || '')}"></label>
-            <label class="field"><span>Regreso</span><input name="regreso" type="date" value="${esc(b.regreso || '')}"${b.salida ? ` min="${esc(b.salida)}"` : ''}></label>
-            <label class="field"><span>Pasajeros</span><input name="pasajeros" type="number" min="0" max="9999" inputmode="numeric" value="${esc(b.pasajeros == null ? '' : b.pasajeros)}"></label>
-            <label class="field"><span>Responsable</span><select name="responsable_id"><option value="">Sin responsable</option>${activas().map((p) => `<option value="${p.id}"${b.responsable_id === p.id ? ' selected' : ''}>${esc(p.nombre)}</option>`).join('')}</select></label>
-            <label class="field"><span>Columna</span><select name="estado">${COLUMNAS.map((c) => `<option value="${c.id}"${(b.estado || 'cotizando') === c.id ? ' selected' : ''}>${esc(c.nombre)}</option>`).join('')}</select></label>
-            <label class="field full"><span>Alcance</span><textarea name="alcance" rows="3" maxlength="4000" placeholder="Qué incluye: aéreos, hoteles, traslados, guía…">${esc(b.alcance || '')}</textarea></label>
-            <label class="field full"><span>Notas internas</span><textarea name="notas" rows="3" maxlength="4000" placeholder="Solo para el equipo: no van al calendario.">${esc(b.notas || '')}</textarea></label>
-          </div>
-          ${meta}
-          <div class="acc">
-            <button class="btn" type="submit"${ocupado('grupo')}>${ico('check')}${S.ocupado === 'grupo' ? 'Guardando…' : 'Guardar'}</button>
-            <button class="btn ghost" type="button" data-accion="grupoCancelar">Cancelar</button>
-            ${editar ? (confirmar
-              ? `<span class="confirmar">¿Eliminar este grupo? También sale del calendario.<span><button type="button" class="btn sm danger" data-gborrar="si"${ocupado('grupoBorrar')}>Sí, eliminar</button><button type="button" class="btn txt sm" data-gborrar="no">No</button></span></span>`
-              : `<button class="btn txt" type="button" data-gborrar="pedir">${ico('basura')}Eliminar</button>`) : ''}
-          </div>
-        </form>
-      </section>`;
-  }
-
-  function abrirGrupo(id) {
-    const G = S.grupos;
-    S.error = '';
-    G.borrar = null;
-    if (id === 'nuevo') {
-      G.abierto = 'nuevo';
-      G.borrador = { estado: 'cotizando', responsable_id: P().id };
-    } else {
-      const g = grupo(id);
-      if (!g) return;
-      G.abierto = g.id;
-      G.borrador = { nombre: g.nombre, destino: g.destino, salida: g.salida || '', regreso: g.regreso || '', pasajeros: g.pasajeros == null ? '' : g.pasajeros, responsable_id: g.responsable_id || '', estado: g.estado, alcance: g.alcance, notas: g.notas };
-    }
-    foco = 'form[data-form=grupo] input[name=nombre]';
-    render();
-    window.scrollTo(0, 0);
-  }
-
-  async function guardarGrupo() {
-    const G = S.grupos, b = G.borrador;
-    const fila = {
-      nombre: String(b.nombre || '').trim(), destino: String(b.destino || '').trim(),
-      salida: b.salida || null, regreso: b.regreso || null,
-      pasajeros: b.pasajeros === '' || b.pasajeros == null ? null : Math.round(+b.pasajeros),
-      responsable_id: b.responsable_id || null, estado: b.estado || 'cotizando',
-      alcance: String(b.alcance || '').trim(), notas: String(b.notas || '').trim(),
-    };
-    S.error = !fila.nombre ? 'Escribe el nombre del grupo.'
-      : fila.salida && fila.regreso && fila.regreso < fila.salida ? 'El regreso no puede ser antes de la salida.'
-      : !fila.salida && fila.regreso ? 'Pon también la fecha de salida.'
-      : fila.pasajeros != null && !(fila.pasajeros >= 0 && fila.pasajeros <= 9999) ? 'Revisa el número de pasajeros.' : '';
-    if (S.error) { foco = fila.nombre ? 'form[data-form=grupo] input[name=salida]' : 'form[data-form=grupo] input[name=nombre]'; render(); return; }
-    await accion('grupo', async () => {
-      if (G.abierto === 'nuevo') await q(sb.from('grupos').insert(fila));
-      else await q(sb.from('grupos').update(fila).eq('id', G.abierto));
-      const nuevo = G.abierto === 'nuevo';
-      G.abierto = null; G.borrador = {};
-      await cargarGrupos();
-      toast(nuevo ? `Grupo «${fila.nombre}» creado.` : 'Cambios guardados.');
-    });
-  }
-
-  async function moverGrupo(id, estado) {
-    const g = grupo(id);
-    if (!g || g.estado === estado) return;
-    const antes = g.estado;
-    g.estado = estado; // se ve de inmediato; si falla, vuelve
-    render();
-    try {
-      await q(sb.from('grupos').update({ estado }).eq('id', g.id));
-      await cargarGrupos();
-      render();
-      toast(`«${g.nombre}» pasó a ${columna(estado).nombre}.`);
-    } catch (e) {
-      g.estado = antes;
-      render();
-      toast(errorTexto(e), 'bad');
-    }
-  }
-
   // ---------- Navegación ----------
   const CARGAS = {
-    inicio: cargarInicio, grupos: cargarGrupos, malla: cargarMalla, comunicados: cargarComunicados, asistencia: cargarAsistencia,
-    informes: cargarInforme, solicitudes: cargarSolicitudes, equipo: recargarPersonas,
+    inicio: cargarInicio, malla: cargarMalla, comunicados: cargarComunicados, asistencia: cargarAsistencia,
+    informes: cargarInforme, solicitudes: cargarSolicitudes, equipo: recargarPersonas, oficina: cargarOficina,
   };
   let navegacion = 0;
   async function ir(view) {
@@ -2106,7 +2000,7 @@
   }
 
   // ---------- Eventos ----------
-  const ACCIONES = '[data-view],[data-accion],[data-marcar],[data-semana],[data-mvista],[data-editar],[data-leer],[data-comf],[data-borrarcom],[data-lb],[data-lbmover],[data-quitarimg],[data-revisar],[data-cancelarsol],[data-lbsol],[data-quitarsop],[data-revquitar],[data-selinf],[data-orden],[data-restablecer],[data-activar],[data-copiar],[data-guia],[data-soltipo],[data-confirmar],[data-demo],[data-gvista],[data-gabrir],[data-gmover],[data-gmes],[data-gborrar]';
+  const ACCIONES = '[data-view],[data-accion],[data-marcar],[data-semana],[data-mvista],[data-editar],[data-leer],[data-comf],[data-borrarcom],[data-lb],[data-lbmover],[data-quitarimg],[data-revisar],[data-cancelarsol],[data-lbsol],[data-quitarsop],[data-revquitar],[data-selinf],[data-orden],[data-restablecer],[data-activar],[data-copiar],[data-guia],[data-soltipo],[data-confirmar],[data-demo]';
 
   document.addEventListener('click', async (ev) => {
     const el = ev.target.closest(ACCIONES);
@@ -2161,13 +2055,65 @@
         case 'exportar': exportarInforme(); return;
         case 'agregarTurno': await accion('turno', agregarTurno); return;
         case 'lbCerrar': S.lb = null; render(); return;
-        case 'grupoNuevo': abrirGrupo('nuevo'); return;
-        case 'grupoCancelar': S.error = ''; S.grupos.abierto = null; S.grupos.borrador = {}; S.grupos.borrar = null; render(); return;
-        case 'calClave':
-          await accion('calClave', async () => { S.grupos.clave = await q(sb.rpc('nueva_clave_calendario')); });
-          return;
-        case 'calCerrar': S.grupos.clave = null; render(); return;
         case 'cerrarClave': S.equipo.claveNueva = null; render(); return;
+        case 'validarIp':
+        case 'validarEquipo': {
+          const clave = d.accion === 'validarIp' ? 'validar_ip' : 'validar_equipo';
+          await accion('ofi', async () => {
+            const valor = { activo: !(S.config[clave] && S.config[clave].activo) };
+            await q(sb.from('configuracion').upsert({ clave, valor, actualizado: new Date().toISOString() }, { onConflict: 'clave' }));
+            S.config[clave] = valor;
+            toast(valor.activo ? 'Control activado.' : 'Control apagado.');
+          });
+          return;
+        }
+        case 'ipAgregar':
+        case 'ipQuitar': {
+          const sede = sedeDe(S.ofi.sede);
+          if (!sede) return;
+          const actuales = sede.ips_oficina || [];
+          const ips = d.accion === 'ipAgregar' ? actuales.concat(S.ofi.ip && !actuales.includes(S.ofi.ip) ? [S.ofi.ip] : []) : actuales.filter((x) => x !== d.ip);
+          if (d.accion === 'ipQuitar' && !ips.length && validarIp()) { toast('Apaga el control 1 antes de quitar la última IP: si no, nadie podría marcar.', 'bad'); return; }
+          await accion('ofi', async () => {
+            const fila = await q(sb.rpc('fijar_ips_oficina', { p_sede: sede.id, p_ips: ips }));
+            Object.assign(sede, fila && fila.ips_oficina ? { ips_oficina: fila.ips_oficina } : { ips_oficina: ips });
+            toast(d.accion === 'ipAgregar' ? 'IP de la oficina registrada.' : 'IP quitada.');
+          });
+          return;
+        }
+        case 'autorizarEquipo': {
+          const inp = document.getElementById('ofi-nombre');
+          const nombre = (inp ? inp.value : '').trim();
+          S.ofi.nombre = nombre;
+          if (!nombre) { toast('Escribe un nombre para este computador.', 'bad'); if (inp) inp.focus(); return; }
+          await accion('ofi', async () => {
+            const r = await q(sb.rpc('autorizar_equipo', { p_nombre: nombre, p_sede: S.ofi.sede }));
+            if (!guardarEquipoLocal({ id: r.id, llave: r.llave, nombre })) {
+              await q(sb.rpc('quitar_equipo', { p_id: r.id }));
+              throw new Error('Este navegador no deja guardar la llave (ventana de incógnito o datos bloqueados). Usa una ventana normal.');
+            }
+            S.ofi.nombre = '';
+            await cargarOficina();
+            toast(`Listo: «${nombre}» puede marcar.`);
+          });
+          return;
+        }
+        case 'quitarEquipo': S.ofi.quitar = Number(d.id); render(); return;
+        case 'quitarEquipoNo': S.ofi.quitar = null; render(); return;
+        case 'quitarEquipoSi': {
+          const id = S.ofi.quitar;
+          const activos = S.ofi.equipos.filter((e) => e.activo && e.id !== id && e.sede_id === S.ofi.sede);
+          if (validarEquipo() && !activos.length) { toast('Apaga el control 2 antes de quitar el último computador: si no, nadie podría marcar.', 'bad'); S.ofi.quitar = null; render(); return; }
+          await accion('ofi', async () => {
+            await q(sb.rpc('quitar_equipo', { p_id: id }));
+            const local = equipoLocal();
+            if (local && local.id === id) guardarEquipoLocal(null);
+            S.ofi.quitar = null;
+            await cargarOficina();
+            toast('Computador quitado.');
+          });
+          return;
+        }
         case 'moduloSol':
           await accion('modulo', async () => {
             const valor = { activo: !moduloSol() };
@@ -2192,7 +2138,7 @@
     if (d.marcar) {
       const tipo = d.marcar;
       await accion('marcar', async () => {
-        await q(sb.rpc('marcar', { p_tipo: tipo }));
+        await q(sb.rpc('marcar', { p_tipo: tipo, p_equipo: (equipoLocal() || {}).llave || null }));
         await cargarInicio();
         toast(`${PASOS.find((x) => x.tipo === tipo).nombre} marcada a las ${hhmm(horaEn(miTz()))}.`);
       });
@@ -2302,38 +2248,9 @@
       await confirmarCuenta();
       return;
     }
-    if (d.copiar === 'calendario') { if (S.grupos.clave) await copiarTexto(S.grupos.clave); return; }
     if (d.copiar) {
       const c = S.equipo.claveNueva;
       if (c) await copiarTexto(`${MARCA.textoClave}\n${location.origin}${location.pathname}\nUsuario: ${c.correo}\nContraseña temporal: ${c.clave}\nAl entrar, crea tu propia contraseña.`);
-      return;
-    }
-    if (d.gvista) { S.grupos.vista = d.gvista; render(); return; }
-    if (d.gabrir) { abrirGrupo(d.gabrir); return; }
-    if (d.gmover) {
-      const [id, paso] = d.gmover.split('|');
-      const g = grupo(id), i = g ? COLUMNAS.findIndex((c) => c.id === g.estado) + +paso : -1;
-      if (COLUMNAS[i]) await moverGrupo(id, COLUMNAS[i].id);
-      return;
-    }
-    if (d.gmes) {
-      const G = S.grupos, [y, m] = G.mes.split('-').map(Number);
-      if (d.gmes === '0') G.mes = fechaEn(miTz()).slice(0, 7);
-      else { const f = new Date(Date.UTC(y, m - 1 + +d.gmes, 1)); G.mes = f.toISOString().slice(0, 7); }
-      render();
-      return;
-    }
-    if (d.gborrar) {
-      const G = S.grupos;
-      if (d.gborrar === 'pedir') { G.borrar = G.abierto; render(); return; }
-      if (d.gborrar === 'no') { G.borrar = null; render(); return; }
-      await accion('grupoBorrar', async () => {
-        const g = grupo(G.abierto);
-        await q(sb.from('grupos').delete().eq('id', G.abierto));
-        G.abierto = null; G.borrador = {}; G.borrar = null;
-        await cargarGrupos();
-        toast(`Grupo «${g ? g.nombre : ''}» eliminado.`);
-      });
       return;
     }
     if (d.guia) { const n = document.getElementById('guia-' + d.guia); if (n) n.scrollIntoView({ behavior: 'smooth', block: 'start' }); }
@@ -2416,14 +2333,13 @@
     }
     if (tipo === 'com') { await publicarComunicado(f); return; }
     if (tipo === 'sol') { await enviarSolicitud(); return; }
-    if (tipo === 'cuenta') { await crearCuenta(); return; }
-    if (tipo === 'grupo') { await guardarGrupo(); }
+    if (tipo === 'cuenta') { await crearCuenta(); }
   });
 
   // Borradores: lo escrito sobrevive a cada render
-  const borradorDe = (k) => (k === 'com' ? S.com.borrador : k === 'sol' ? S.sol.borrador : k === 'grupo' ? S.grupos.borrador : S.equipo.borrador);
   document.addEventListener('input', (ev) => {
     const el = ev.target;
+    if (el.id === 'ofi-nombre') { S.ofi.nombre = el.value; return; }
     if (el.dataset && el.dataset.buscar) {
       if (el.dataset.buscar === 'com') { S.com.q = el.value; const l = document.getElementById('lista-com'); if (l) l.innerHTML = listaComunicados(); }
       if (el.dataset.buscar === 'equipo') {
@@ -2438,7 +2354,7 @@
     const form = el.closest && el.closest('form[data-borrador]');
     if (form && el.name) {
       const k = form.dataset.borrador;
-      const b = borradorDe(k);
+      const b = k === 'com' ? S.com.borrador : k === 'sol' ? S.sol.borrador : S.equipo.borrador;
       b[el.name] = el.type === 'checkbox' ? el.checked : el.value;
       if (k === 'com' && el.name === 'titulo') { const h = el.parentElement.querySelector('.hint'); if (h) h.textContent = `${el.value.length}/140`; }
     }
@@ -2446,10 +2362,11 @@
 
   document.addEventListener('change', async (ev) => {
     const el = ev.target, d = el.dataset || {};
+    if (d.ofisede !== undefined) { S.ofi.sede = Number(el.value); S.ofi.quitar = null; render(); return; }
     const form = el.closest && el.closest('form[data-borrador]');
     if (form && el.name && (el.tagName === 'SELECT' || el.type === 'checkbox')) {
       const k = form.dataset.borrador;
-      const b = borradorDe(k);
+      const b = k === 'com' ? S.com.borrador : k === 'sol' ? S.sol.borrador : S.equipo.borrador;
       b[el.name] = el.type === 'checkbox' ? el.checked : el.value;
       if (k === 'com' && el.name === 'destino') render();
       return;
@@ -2507,35 +2424,6 @@
         toast('Acceso actualizado.');
       });
     }
-  });
-
-  // Tablero de grupos: arrastrar una tarjeta a otra columna (en el celular, las flechas de la tarjeta)
-  document.addEventListener('dragstart', (ev) => {
-    const c = ev.target.closest && ev.target.closest('[data-arrastrar]');
-    if (!c) return;
-    ev.dataTransfer.setData('text/plain', c.dataset.arrastrar);
-    ev.dataTransfer.effectAllowed = 'move';
-    c.classList.add('arrastrando');
-  });
-  document.addEventListener('dragend', (ev) => {
-    const c = ev.target.closest && ev.target.closest('[data-arrastrar]');
-    if (c) c.classList.remove('arrastrando');
-    document.querySelectorAll('.kcol.encima').forEach((x) => x.classList.remove('encima'));
-  });
-  document.addEventListener('dragover', (ev) => {
-    const col = ev.target.closest && ev.target.closest('[data-soltar]');
-    if (!col) return;
-    ev.preventDefault();
-    document.querySelectorAll('.kcol.encima').forEach((x) => { if (x !== col) x.classList.remove('encima'); });
-    col.classList.add('encima');
-  });
-  document.addEventListener('drop', async (ev) => {
-    const col = ev.target.closest && ev.target.closest('[data-soltar]');
-    if (!col) return;
-    ev.preventDefault();
-    col.classList.remove('encima');
-    const id = ev.dataTransfer.getData('text/plain');
-    if (id) await moverGrupo(id, col.dataset.soltar);
   });
 
   // Celdas de la malla y campos de turnos: se resuelven al salir

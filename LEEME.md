@@ -2,7 +2,7 @@
 
 Intranet del equipo de Caminos, construida con el *Manual técnico · Intranet corporativa (versión final)* y con el sistema de diseño de Caminos (el mismo de Caminos Documentos: coral `#F25061`, Poppins, logo con la estrella, fondo hueso, botones con radio 10).
 
-**Qué trae:** acceso con correo corporativo y contraseña, **grupos de viaje** (tablero de cinco columnas, línea de tiempo y calendario compartido de Google), pase de jornada para marcar asistencia, malla de horarios (horario fijo + cambios puntuales + turnos), comunicados con confirmación de lectura, asistencia del día, informe mensual de gerencia con exportación a Excel, solicitudes de vacaciones, permisos e incapacidades, administración de cuentas y una guía de uso según el rol.
+**Qué trae:** acceso con correo corporativo y contraseña, pase de jornada para marcar asistencia, malla de horarios (horario fijo + cambios puntuales + turnos), comunicados con confirmación de lectura, asistencia del día, informe mensual de gerencia con exportación a Excel, solicitudes de vacaciones, permisos e incapacidades, administración de cuentas y una guía de uso según el rol.
 
 **Accesos a las herramientas (tarjetas en Inicio):**
 
@@ -53,7 +53,7 @@ intranet/
 │   ├── migrations/001 … 008  ← base de datos (ver tabla abajo)
 │   ├── instalar_todo.sql     ← todas en un archivo (bash supabase/unir.sh)
 │   ├── functions/crear-usuario/index.ts
-│   └── pruebas/              ← 124 pruebas de permisos en Postgres local
+│   └── pruebas/              ← 144 pruebas de permisos en Postgres local
 └── pruebas/
     ├── demo.html, supabase-simulado.js
     ├── recorrido.js          ← cada rol, cada pestaña, escritorio y celular
@@ -75,13 +75,13 @@ Como Caminos es un cliente nuevo, se fusionaron las del manual (el manual lo per
 | `006_supervisor.sql` | 006 a 010 |
 | `007_horario_fijo.sql` | 011 |
 | `008_ver_solicitudes.sql` | Corrección propia: la regla de lectura de solicitudes usa la fila y no vuelve a consultar la tabla (sin esto, enviar una solicitud fallaba en Supabase real) |
-| `009_grupos.sql` | Propia: grupos de viaje (todo el equipo activo los crea, mueve y borra), clave y lectura para Google Calendar (`calendario/LEEME.md`) |
+| `009_marcar_desde_oficina.sql` | Seguridad propia: IP real del cliente (no se puede falsificar), computadores autorizados y funciones para la pestaña Oficina |
 
 ## 3. Pruebas hechas
 
-- **Permisos en Postgres** (`supabase/pruebas/correr.sh`): 149 reglas en verde (con las 25 de grupos y la clave del calendario). Marcas solo con `marcar()`, orden de los pasos, bloqueo por IP, malla por sede, supervisor sin poderes de gerencia, comunicados por destinatario, solicitudes por revisor, ausencias aprobadas, `anon` sin acceso.
-- **Interfaz** (`pruebas/recorrido.js`): 4 roles × 2 anchos (1300 px y 390 px), cada pestaña (Grupos en tablero y línea de tiempo) sin desborde horizontal y sin errores de página.
-- **Acciones** (`pruebas/acciones.js`): 79 verificaciones (incluye recuperar contraseña y crear, mover, arrastrar, editar y borrar grupos), entre ellas que el informe cuadra con un cálculo manual independiente y que el CSV sale con BOM, `;` y `\r\n`.
+- **Permisos en Postgres** (`supabase/pruebas/correr.sh`): 144 reglas en verde. Marcas solo con `marcar()`, orden de los pasos, bloqueo por IP, malla por sede, supervisor sin poderes de gerencia, comunicados por destinatario, solicitudes por revisor, ausencias aprobadas, `anon` sin acceso.
+- **Interfaz** (`pruebas/recorrido.js`): 4 roles × 2 anchos (1300 px y 390 px), cada pestaña sin desborde horizontal y sin errores de página.
+- **Acciones** (`pruebas/acciones.js`): 80 verificaciones (incluye recuperar contraseña y la pestaña Oficina), entre ellas que el informe cuadra con un cálculo manual independiente y que el CSV sale con BOM, `;` y `\r\n`.
 
 ```bash
 # Postgres local (usuario postgres)
@@ -89,8 +89,6 @@ PGHOST=… PGPORT=… PGUSER=postgres bash supabase/pruebas/correr.sh
 # Interfaz (con el servidor de la sección 1 corriendo)
 node pruebas/recorrido.js capturas
 node pruebas/acciones.js
-# Programa de Google Calendar (sin Google)
-node calendario/probar.js
 ```
 
 Lo que el simulador **no** cubre: los permisos de `service_role` y la Edge Function real. Crear una cuenta en el Supabase real de Caminos es parte obligatoria de la prueba final (manual §13.4).
@@ -103,6 +101,15 @@ En la entrada hay un botón **«¿Olvidaste tu contraseña?»**. La persona escr
 - Un enlace vencido o ya usado lleva a pedir uno nuevo. Supabase no deja pedir otro para el mismo correo antes de 60 segundos.
 - El enlace vuelve a la dirección de la intranet, que está en *Site URL* y en *Redirect URLs*.
 - **Correo de salida:** mientras Supabase use su correo de prueba, solo envía a los miembros de la organización de Supabase y máximo 2 por hora. Para el equipo hay que configurar SMTP propio (Google Workspace: `smtp.gmail.com`, puerto 465, con una contraseña de aplicación) en *Authentication → Emails → SMTP Settings*. Después se pega la plantilla `supabase/correos/recuperar_contrasena.html` y se sube el límite de correos por hora.
+
+## 3c. Marcar solo desde la oficina (pestaña Oficina, gerencia)
+
+Dos controles que se activan por separado:
+
+1. **Solo desde la red de la oficina.** Desde un computador de la oficina, la gerencia toca «Registrar como IP de la oficina» y activa el control. Con datos del celular o desde la casa no se puede marcar. La IP se lee de `cf-connecting-ip` (la pone Cloudflare): antes se leía el primer valor de `x-forwarded-for`, que el navegador puede inventar. Requiere IP fija del proveedor de internet.
+2. **Solo desde computadores autorizados.** En cada computador de la oficina, la gerencia entra con su cuenta y toca «Autorizar este computador». El navegador guarda una llave de 64 caracteres; en la base solo queda su huella SHA-256 (columna que nadie puede leer). Sin la llave (celulares, computadores personales) no se marca. Cada marca guarda qué computador se usó.
+
+Límites: ninguna página web detecta con certeza un programa de acceso remoto (AnyDesk, TeamViewer, Escritorio remoto). Eso se controla en los computadores: sin esos programas, sin permisos de administrador para los asesores y con esos sitios bloqueados en el router.
 
 ## 4. Pendientes y decisiones
 
