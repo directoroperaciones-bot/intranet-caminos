@@ -436,9 +436,13 @@ tr.inactiva > * { opacity: .55; }
 .kcard-t { all: unset; cursor: pointer; font-weight: 600; color: var(--carbon); line-height: 1.3; overflow-wrap: anywhere; }
 .kcard-t:hover { color: var(--coral); }
 .kcard-t:focus-visible { outline: 2px solid var(--coral-foco); outline-offset: 2px; border-radius: 4px; }
-.kcard-d { font-size: 13px; color: var(--texto); }
-.kcard-p { display: flex; align-items: flex-start; gap: 5px; font-size: 12px; color: var(--pizarra); overflow-wrap: anywhere; }
-.kcard-p .i { width: 14px; height: 14px; flex: none; margin-top: 1px; }
+.kcard-arriba { display: flex; flex-direction: column; gap: 4px; }
+.kcard-d { display: flex; align-items: flex-start; gap: 6px; font-size: 13px; font-weight: 500; color: var(--texto); overflow-wrap: anywhere; }
+.kcard-d .i { width: 14px; height: 14px; flex: none; margin-top: 2px; color: var(--coral); }
+.kcard-abajo { display: flex; flex-direction: column; gap: 5px; margin-top: 4px; padding-top: 8px; border-top: 1px solid var(--hairline); }
+.kcard-p { display: flex; align-items: flex-start; gap: 6px; font-size: 12.5px; font-weight: 500; color: var(--carbon); overflow-wrap: anywhere; }
+.kcard-p.vacia { font-weight: 400; font-style: italic; color: var(--pizarra); }
+.kcard-p .i { width: 14px; height: 14px; flex: none; margin-top: 1px; color: var(--pizarra); }
 .kcard-f { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--pizarra); }
 .kcard-f .i, .kcard-pie .i { width: 14px; height: 14px; }
 .kcard-pie { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 13px; color: var(--pizarra); }

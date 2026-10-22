@@ -2882,10 +2882,14 @@
     const i = COLUMNAS.findIndex((c) => c.id === g.estado);
     const resp = g.responsable_id && persona(g.responsable_id);
     return `<article class="kcard" draggable="true" data-arrastrar="${g.id}">
-        <button type="button" class="kcard-t" data-gabrir="${g.id}">${esc(g.nombre)}</button>
-        ${g.destino ? `<span class="kcard-d">${esc(g.destino)}</span>` : ''}
-        ${g.parroquia ? `<span class="kcard-p">${ico('iglesia')}${esc(g.parroquia)}</span>` : ''}
-        <span class="kcard-f">${ico('calendario')}${esc(fechasGrupo(g))}</span>
+        <div class="kcard-arriba">
+          <button type="button" class="kcard-t" data-gabrir="${g.id}">${esc(g.nombre)}</button>
+          ${g.destino ? `<span class="kcard-d">${ico('avion')}${esc(g.destino)}</span>` : ''}
+        </div>
+        <div class="kcard-abajo">
+          <span class="kcard-p${g.parroquia ? '' : ' vacia'}">${ico('iglesia')}${g.parroquia ? esc(g.parroquia) : 'Sin parroquia'}</span>
+          <span class="kcard-f">${ico('calendario')}${esc(fechasGrupo(g))}</span>
+        </div>
         <div class="kcard-pie">
           <span>${g.pasajeros != null ? `${ico('usuarios')}${g.pasajeros}` : ''}${resp ? `<span class="avatar sm" title="${esc(resp.nombre)}">${esc(initials(resp.nombre))}</span>` : ''}</span>
           <span class="kcard-mover">

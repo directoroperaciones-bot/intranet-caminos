@@ -518,6 +518,11 @@ let page;
   const enColumna = (col, nombre) => page.$$eval(`[data-soltar="${col}"] .kcard-t`, (bs, n) => bs.some((b) => b.textContent === n), nombre);
   ok(await enColumna('confirmado', 'Peregrinación Fátima y Lourdes'), 'grupos: el tablero muestra los grupos en su columna');
   ok((await page.locator('.kcard', { hasText: 'Peregrinación Fátima y Lourdes' }).textContent()).includes('Parroquia San José de Chapinero'), 'grupos: la tarjeta muestra la parroquia');
+  const ficha = await page.locator('.kcard', { hasText: 'Peregrinación Fátima y Lourdes' }).evaluate((c) => ({
+    arriba: c.querySelector('.kcard-arriba').textContent.replace(/\s+/g, ' ').trim(),
+    abajo: c.querySelector('.kcard-abajo').textContent.replace(/\s+/g, ' ').trim(),
+  }));
+  ok(ficha.arriba.startsWith('Peregrinación Fátima y Lourdes') && ficha.arriba.includes('Portugal y Francia') && ficha.abajo.startsWith('Parroquia San José de Chapinero') && /→/.test(ficha.abajo), `grupos: arriba nombre y destino; abajo parroquia y fechas (${ficha.abajo})`);
   await page.click('[data-accion=grupoNuevo]');
   await page.click('form[data-form=grupo] button[type=submit]');
   ok((await page.textContent('form[data-form=grupo] .err')).includes('nombre'), 'grupos: pide el nombre');
@@ -550,7 +555,7 @@ let page;
   ok((await page.inputValue('form[data-form=grupo] input[name=parroquia]')) === 'Parroquia Santa Teresita', 'grupos: un grupo nuevo toma la parroquia del filtro');
   await page.click('[data-accion=grupoCancelar]');
   await page.selectOption('select[data-gparroquia]', '__sin');
-  ok((await page.$$eval('.kcard', (cs) => cs.every((c) => !c.querySelector('.kcard-p')))) && (await page.$$('.kcard')).length >= 1, 'grupos: «Sin parroquia» muestra los que no la tienen');
+  ok((await page.$$eval('.kcard', (cs) => cs.every((c) => c.querySelector('.kcard-p.vacia')))) && (await page.$$('.kcard')).length >= 1, 'grupos: «Sin parroquia» muestra los que no la tienen (la ficha lo dice)');
   await page.click('[data-accion=gParroquiaTodas]');
   ok((await page.$$('.kcard')).length === totalGrupos, 'grupos: «Quitar filtro» vuelve a mostrar todos');
   const tarjeta = page.locator('.kcard', { hasText: 'Prueba Medellín' });
