@@ -10,7 +10,19 @@ Los grupos con fechas de la intranet aparecen solos en un calendario compartido 
 | En viaje | Rojo |
 | Finalizado | Gris |
 
-El evento trae destino, fechas, pasajeros, responsable y alcance. Las **notas internas no salen** de la intranet. Un programa gratis de Google (Apps Script) revisa la intranet **cada 10 minutos**: crea, cambia o borra los eventos. Los cambios se hacen siempre en la intranet; si alguien cambia un evento en Google, se pierde en la siguiente vuelta.
+El evento trae destino, parroquia, fechas, pasajeros, responsable y alcance. Las **notas internas no salen** de la intranet. Un programa gratis de Google (Apps Script) revisa la intranet **cada 10 minutos**: crea, cambia o borra los eventos. Los cambios se hacen siempre en la intranet; si alguien cambia un evento en Google, se pierde en la siguiente vuelta.
+
+## Filtro por parroquia
+
+Google Calendar filtra por calendarios: las casillas de «Mis calendarios» (en el computador) o del menú (en el celular) muestran u ocultan cada uno. Por eso cada grupo con parroquia va a un calendario propio, **«Grupos · <parroquia>»**, que el programa crea solo la primera vez que aparece esa parroquia. Los grupos sin parroquia siguen en **«Grupos Caminos»**.
+
+- Para ver solo una parroquia, deja marcada su casilla y desmarca las demás. Para ver todo, márcalas todas.
+- Si a un grupo le cambian la parroquia en la intranet, su evento pasa solo al calendario de la nueva.
+- Mayúsculas, tildes y espacios de más no crean calendarios distintos («parroquia san jose» y «Parroquia San José» son el mismo).
+- Si se agrega la propiedad **`COMPARTIR_CON`** (correos separados por comas), cada calendario nuevo se comparte solo, para ver, con esas personas. Para alguien nuevo en el equipo: agrega su correo a `COMPARTIR_CON` y ejecuta **`compartirCalendarios`** una vez.
+- Un calendario de parroquia que se queda sin grupos no se borra (para no perder a quién está compartido); se puede borrar a mano en Google y el programa lo vuelve a crear si hace falta.
+
+**Si el programa ya estaba instalado:** vuelve a pegar `Codigo.gs` y `appsscript.json` (paso 3.2 y 3.3) y ejecuta `instalar` otra vez. Google pide un permiso nuevo para compartir calendarios: acéptalo.
 
 ## Instalación (una sola vez, unos 15 minutos)
 
@@ -44,11 +56,12 @@ En la intranet, entra a **Grupos → Conectar Google Calendar** y toca **Copiar*
 | `CLAVE_CALENDARIO` | La clave del paso 2 |
 | `CALENDARIO_ID` | El identificador del calendario de la tabla de arriba. Si se deja vacía, `crearCalendario` crea uno nuevo |
 
+   - `COMPARTIR_CON` (opcional): los correos del equipo, separados por comas. Así los calendarios de cada parroquia se comparten solos.
 5. Como el calendario ya existe, no hace falta `crearCalendario`. Elige la función **`instalar`** y toca **Ejecutar**. Google pide permiso: acepta con la cuenta de la empresa. Hace la primera vuelta y deja la revisión cada 10 minutos. En el registro debe salir «Listo: se sincroniza cada 10 minutos».
 
 ### 4. Compartir el calendario con el equipo
 
-En [Google Calendar](https://calendar.google.com), en «Mis calendarios», abre los tres puntos de **Grupos Caminos** → **Configuración y uso compartido** → **Compartir con personas o grupos específicos**. Agrega el correo de cada colaborador con el permiso **«Ver todos los detalles de los eventos»**. Cada persona recibe un correo; al aceptarlo, los grupos aparecen en su agenda, en el computador y en el celular.
+En [Google Calendar](https://calendar.google.com), en «Mis calendarios», abre los tres puntos de **Grupos Caminos** → **Configuración y uso compartido** → **Compartir con personas o grupos específicos**. Agrega el correo de cada colaborador con el permiso **«Ver todos los detalles de los eventos»**. Los calendarios de cada parroquia se comparten solos si llenaste `COMPARTIR_CON`; si no, se comparten igual que este. Cada persona recibe un correo; al aceptarlo, los grupos aparecen en su agenda, en el computador y en el celular.
 
 Para alguien nuevo en el equipo solo se repite este paso.
 
@@ -61,4 +74,4 @@ Para alguien nuevo en el equipo solo se repite este paso.
 
 ## Pruebas
 
-`node calendario/probar.js` prueba `Codigo.gs` con un calendario y una intranet simulados: crea, actualiza y borra eventos, no toca eventos ajenos y avisa con una clave vencida o una llave secreta. La función `grupos_calendario` y la clave tienen sus pruebas de permisos en `supabase/pruebas/03_grupos.sql`.
+`node calendario/probar.js` prueba `Codigo.gs` con calendarios y una intranet simulados: crea, actualiza y borra eventos, no toca eventos ajenos, avisa con una clave vencida o una llave secreta, crea y comparte un calendario por parroquia y mueve el evento cuando cambia la parroquia (29 pruebas). La función `grupos_calendario` y la clave tienen sus pruebas de permisos en `supabase/pruebas/03_grupos.sql`.

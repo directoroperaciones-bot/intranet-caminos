@@ -2751,7 +2751,7 @@
           <li><b>Tablero:</b> cada grupo es una tarjeta en una de cinco columnas: Cotizando, Confirmado, Documentación lista, En viaje y Finalizado. Arrástrala a otra columna o usa las flechas de la tarjeta (en el celular, desliza para ver las demás columnas).</li>
           <li><b>Nuevo grupo:</b> nombre, destino, parroquia, fechas de salida y regreso, pasajeros, responsable, alcance y notas internas. Toca el nombre de una tarjeta para cambiarla o eliminarla.</li>
           <li><b>Línea de tiempo:</b> cada grupo con fechas es una barra del día de salida al de regreso; cambia de mes con las flechas.</li>
-          <li><b>Google Calendar:</b> los grupos con fechas aparecen solos en el calendario compartido «Grupos Caminos» (puede tardar unos minutos). Las notas internas no van al calendario.</li>
+          <li><b>Google Calendar:</b> los grupos con fechas aparecen solos (puede tardar unos minutos). Cada parroquia tiene su calendario, «Grupos · nombre de la parroquia»; los grupos sin parroquia van a «Grupos Caminos». Para filtrar por parroquia, marca o desmarca esos calendarios en Google Calendar. Las notas internas no van al calendario.</li>
           <li>Todo el equipo puede crear, mover, cambiar y eliminar grupos; cada tarjeta guarda quién hizo el último cambio.</li>
         </ul>` },
       { id: 'malla', titulo: 'Malla, comunicados y herramientas', ver: true, html: `<ul>
@@ -2872,7 +2872,7 @@
         <dl><div><dt>Clave</dt><dd class="mono">${esc(G.clave)}</dd></div></dl>
         <div class="acc"><button type="button" class="btn" data-copiar="calendario">${ico('copiar')}Copiar</button><button type="button" class="btn ghost" data-accion="calCerrar">Listo</button></div>
       </section>` : '';
-    return encabezado('Viajes', '<em>Grupos</em>', 'Cada grupo es una tarjeta: muévela de columna a medida que avanza. Los grupos con fechas aparecen en la línea de tiempo y en el calendario «Grupos Caminos» de Google.', nuevo)
+    return encabezado('Viajes', '<em>Grupos</em>', 'Cada grupo es una tarjeta: muévela de columna a medida que avanza. Los grupos con fechas aparecen en la línea de tiempo y en Google Calendar, con un calendario por parroquia para filtrar.', nuevo)
       + clave + (G.abierto ? grupoFormView() : '') + barra
       + (G.vista === 'tiempo' ? lineaTiempoView() : tableroView());
   }

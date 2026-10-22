@@ -9,9 +9,14 @@
    - Solo toca los eventos que él mismo creó (marcados con «grupo_id»):
      los demás eventos del calendario no se tocan.
    - Si un grupo se borra o se le quitan las fechas, su evento se borra.
+   - Filtro por parroquia: cada grupo con parroquia va a un calendario
+     propio, «Grupos · <parroquia>», que se crea solo. Los grupos sin
+     parroquia siguen en «Grupos Caminos». En Google Calendar, marcar o
+     desmarcar esos calendarios es filtrar por parroquia.
    ===================================================================== */
 
 var CALENDARIO_NOMBRE = 'Grupos Caminos';
+var PREFIJO_PARROQUIA = 'Grupos · ';
 var COLUMNAS = {
   cotizando: { nombre: 'Cotizando', color: 'PALE_BLUE' },
   confirmado: { nombre: 'Confirmado', color: 'GREEN' },
@@ -50,6 +55,19 @@ function instalar() {
   Logger.log('Listo: se sincroniza cada 10 minutos. Primera vuelta: ' + JSON.stringify(r));
 }
 
+// 3) Opcional: comparte todos los calendarios (el principal y los de cada
+// parroquia) con los correos de la propiedad COMPARTIR_CON. Sirve para
+// alguien nuevo en el equipo. Los calendarios de parroquias nuevas se
+// comparten solos al crearse.
+function compartirCalendarios() {
+  var props = revisarPropiedades_();
+  if (!props.COMPARTIR_CON) throw new Error('Escribe los correos en la propiedad COMPARTIR_CON, separados por comas (ver LEEME.md).');
+  var mapa = calendariosParroquia_();
+  var ids = [props.CALENDARIO_ID].concat(Object.keys(mapa).map(function (k) { return mapa[k].id; }));
+  ids.forEach(function (id) { compartir_(id, props.COMPARTIR_CON); });
+  Logger.log('Compartidos ' + ids.length + ' calendarios con ' + props.COMPARTIR_CON);
+}
+
 // Para dejar de sincronizar (los eventos que ya están se quedan).
 function desinstalar() {
   ScriptApp.getProjectTriggers().forEach(function (t) {
@@ -62,9 +80,15 @@ function desinstalar() {
 
 function sincronizar() {
   var props = revisarPropiedades_();
-  var cal = CalendarApp.getCalendarById(props.CALENDARIO_ID);
-  if (!cal) throw new Error('No encuentro el calendario ' + props.CALENDARIO_ID + '. Corre crearCalendario().');
+  var principal = CalendarApp.getCalendarById(props.CALENDARIO_ID);
+  if (!principal) throw new Error('No encuentro el calendario ' + props.CALENDARIO_ID + '. Corre crearCalendario().');
   var grupos = leerGrupos_(props);
+  var mapa = calendariosParroquia_();
+  var calendarios = [principal];
+  Object.keys(mapa).forEach(function (k) {
+    var c = CalendarApp.getCalendarById(mapa[k].id);
+    if (c) calendarios.push(c); else delete mapa[k]; // lo borraron en Google: se crea de nuevo si hace falta
+  });
 
   // Eventos que este programa creó antes, por grupo
   var hoy = new Date();
@@ -76,25 +100,31 @@ function sincronizar() {
     if (r >= hasta) hasta = sumarDias_(r, 1);
   });
   var existentes = {};
-  cal.getEvents(desde, hasta).forEach(function (ev) {
-    var id = ev.getTag('grupo_id');
-    if (!id) return;
-    if (existentes[id]) { ev.deleteEvent(); return; } // repetido: se deja uno
-    existentes[id] = ev;
+  calendarios.forEach(function (c) {
+    c.getEvents(desde, hasta).forEach(function (ev) {
+      var id = ev.getTag('grupo_id');
+      if (!id) return;
+      if (existentes[id]) { ev.deleteEvent(); return; } // repetido: se deja uno
+      existentes[id] = { ev: ev, cal: c.getId() };
+    });
   });
 
-  var cuenta = { creados: 0, cambiados: 0, borrados: 0, iguales: 0 };
+  var cuenta = { creados: 0, cambiados: 0, movidos: 0, borrados: 0, iguales: 0, calendarios: 0 };
   grupos.forEach(function (g) {
     var id = String(g.id);
     var datos = evento_(g);
-    var ev = existentes[id];
+    var cal = calendarioDe_(g.parroquia, principal, mapa, props, cuenta);
+    var previo = existentes[id];
     delete existentes[id];
+    var ev = previo ? previo.ev : null;
+    // Cambió de parroquia: el evento pasa al calendario de la nueva
+    if (ev && previo.cal !== cal.getId()) { ev.deleteEvent(); ev = null; cuenta.movidos++; }
     if (!ev) {
       ev = cal.createAllDayEvent(datos.titulo, datos.inicio, datos.fin, { description: datos.descripcion });
       ev.setTag('grupo_id', id);
       ev.setTag('huella', datos.huella);
       ponerColor_(ev, g.estado);
-      cuenta.creados++;
+      if (!previo || previo.cal === cal.getId()) cuenta.creados++;
       return;
     }
     if (ev.getTag('huella') === datos.huella) { cuenta.iguales++; return; }
@@ -106,9 +136,56 @@ function sincronizar() {
     cuenta.cambiados++;
   });
   // Lo que queda ya no existe en la intranet (o perdió sus fechas)
-  Object.keys(existentes).forEach(function (id) { existentes[id].deleteEvent(); cuenta.borrados++; });
+  Object.keys(existentes).forEach(function (id) { existentes[id].ev.deleteEvent(); cuenta.borrados++; });
+  guardarCalendariosParroquia_(mapa);
   Logger.log(JSON.stringify(cuenta));
   return cuenta;
+}
+
+// ---------- Un calendario por parroquia ----------
+
+// { 'parroquia san josé': { nombre: 'Parroquia San José', id: '…@group.calendar.google.com' } }
+function calendariosParroquia_() {
+  try { return JSON.parse(PropertiesService.getScriptProperties().getProperty('CALENDARIOS_PARROQUIA') || '{}'); } catch (e) { return {}; }
+}
+function guardarCalendariosParroquia_(mapa) {
+  PropertiesService.getScriptProperties().setProperty('CALENDARIOS_PARROQUIA', JSON.stringify(mapa));
+}
+// Mayúsculas, tildes y espacios de más no crean calendarios distintos
+function claveParroquia_(p) {
+  return String(p || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, ' ').trim().toLowerCase();
+}
+function calendarioDe_(parroquia, principal, mapa, props, cuenta) {
+  var k = claveParroquia_(parroquia);
+  if (!k) return principal;
+  var c = mapa[k] && CalendarApp.getCalendarById(mapa[k].id);
+  if (c) return c;
+  var nombre = String(parroquia).replace(/\s+/g, ' ').trim();
+  c = CalendarApp.createCalendar(PREFIJO_PARROQUIA + nombre, {
+    summary: 'Grupos de viaje de ' + nombre + ' (Caminos). Se llena solo desde la intranet: los cambios hechos aquí se pierden.',
+    timeZone: 'America/Bogota',
+  });
+  mapa[k] = { nombre: nombre, id: c.getId() };
+  guardarCalendariosParroquia_(mapa);
+  compartir_(c.getId(), props.COMPARTIR_CON);
+  cuenta.calendarios++;
+  return c;
+}
+// Comparte un calendario (solo ver) con los correos dados. Necesita el
+// servicio avanzado «Google Calendar API» (viene activado en appsscript.json).
+function compartir_(calId, correos) {
+  if (!correos) return;
+  if (typeof Calendar === 'undefined' || !Calendar.Acl) {
+    Logger.log('Para compartir solo los calendarios, activa el servicio avanzado «Google Calendar API» (ver LEEME.md).');
+    return;
+  }
+  String(correos).split(/[,;\s]+/).filter(function (c) { return c; }).forEach(function (correo) {
+    try {
+      Calendar.Acl.insert({ role: 'reader', scope: { type: 'user', value: correo } }, calId, { sendNotifications: true });
+    } catch (e) {
+      Logger.log('No pude compartir ' + calId + ' con ' + correo + ': ' + e.message);
+    }
+  });
 }
 
 function leerGrupos_(props) {
@@ -148,7 +225,7 @@ function evento_(g) {
     descripcion: lineas.filter(function (x) { return x; }).join('\n'),
     inicio: inicio,
     fin: fin,
-    huella: [titulo, g.salida, g.regreso, g.pasajeros, g.responsable, g.alcance, g.estado].join('|'),
+    huella: [titulo, g.parroquia, g.salida, g.regreso, g.pasajeros, g.responsable, g.alcance, g.estado].join('|'),
   };
 }
 

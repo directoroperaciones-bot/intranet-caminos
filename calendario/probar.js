@@ -28,7 +28,10 @@ function nuevoCalendario(nombre) {
     },
   };
 }
+const calendarios = {};
 const cal = nuevoCalendario('grupos');
+calendarios[cal.id] = cal;
+const compartidos = [];
 const ajeno = cal.createAllDayEvent('Reunión de equipo', new Date(2026, 9, 20), new Date(2026, 9, 21), { description: '' });
 let grupos = [];
 let respuesta = null;
@@ -40,9 +43,10 @@ const ctx = {
   PropertiesService: { getScriptProperties: () => ({ getProperties: () => ({ ...props }), getProperty: (k) => props[k] || null, setProperty: (k, v) => { props[k] = v; } }) },
   CalendarApp: {
     EventColor: { PALE_BLUE: '1', GREEN: '10', YELLOW: '5', RED: '11', GRAY: '8' },
-    getCalendarById: (id) => (id === cal.id ? cal : null),
-    createCalendar: (n) => nuevoCalendario(n),
+    getCalendarById: (id) => calendarios[id] || null,
+    createCalendar: (n, opc) => { const c = nuevoCalendario(n); c.nombre = n; c.opc = opc; calendarios[c.id] = c; return c; },
   },
+  Calendar: { Acl: { insert: (regla, calId, opc) => compartidos.push({ calId, correo: regla.scope.value, rol: regla.role, aviso: opc.sendNotifications }) } },
   UrlFetchApp: {
     fetch(url, opc) {
       pedidos.push({ url, opc });
@@ -99,6 +103,47 @@ let error = '';
 try { ctx.sincronizar(); } catch (e) { error = e.message; }
 ok(/Conectar Google Calendar/.test(error) && de(1), 'con una clave vencida avisa qué hacer y no borra nada');
 respuesta = null;
+
+// ---------- Filtro por parroquia: un calendario por parroquia ----------
+const deEn = (c, id) => c.eventos.find((e) => !e.borrado && e.tags.grupo_id === String(id));
+const calDe = (nombre) => Object.values(calendarios).find((c) => c.nombre === 'Grupos · ' + nombre);
+props.COMPARTIR_CON = 'ana@agenciacaminos.com.co, luis@agenciacaminos.com.co';
+grupos = [
+  { ...grupos[0], parroquia: 'Parroquia San José' },
+  { id: 3, nombre: 'Jubilados', destino: 'Eje Cafetero', parroquia: '  parroquia  san jose ', salida: '2026-12-06', regreso: '2026-12-11', pasajeros: 22, responsable: null, alcance: '', estado: 'cotizando' },
+  { id: 4, nombre: 'Familia Gómez', destino: 'Cartagena', parroquia: '', salida: '2026-12-20', regreso: '2026-12-24', pasajeros: 4, responsable: null, alcance: '', estado: 'confirmado' },
+];
+r = ctx.sincronizar();
+const sj = calDe('Parroquia San José');
+ok(!!sj && r.calendarios === 1, 'crea el calendario «Grupos · Parroquia San José» la primera vez');
+ok(deEn(sj, 1) && deEn(sj, 3) && !deEn(cal, 1) && !deEn(cal, 3), 'los grupos de esa parroquia van a su calendario (mayúsculas, tildes y espacios no crean otro)');
+ok(r.movidos === 1, 'el grupo que ya existía pasa del calendario principal al de su parroquia');
+ok(deEn(cal, 4) && !deEn(sj, 4), 'los grupos sin parroquia siguen en «Grupos Caminos»');
+ok(/Parroquia: Parroquia San José/.test(deEn(sj, 1).descripcion), 'la descripción del evento trae la parroquia');
+ok(compartidos.filter((c) => c.calId === sj.id).map((c) => c.correo).join(',') === 'ana@agenciacaminos.com.co,luis@agenciacaminos.com.co' && compartidos.every((c) => c.rol === 'reader' && c.aviso), 'comparte solo (para ver) el calendario nuevo con COMPARTIR_CON');
+r = ctx.sincronizar();
+ok(r.iguales === 3 && r.calendarios === 0 && r.movidos === 0, 'sin cambios no crea calendarios ni mueve eventos');
+
+grupos[1] = { ...grupos[1], parroquia: 'Parroquia Santa Teresita' };
+r = ctx.sincronizar();
+const st = calDe('Parroquia Santa Teresita');
+ok(st && deEn(st, 3) && !deEn(sj, 3) && r.movidos === 1, 'si cambia la parroquia, el evento pasa al calendario de la nueva');
+grupos[0] = { ...grupos[0], parroquia: '' };
+r = ctx.sincronizar();
+ok(deEn(cal, 1) && !deEn(sj, 1), 'si se quita la parroquia, vuelve a «Grupos Caminos»');
+grupos[2] = { ...grupos[2], parroquia: 'Parroquia Santa Teresita' };
+grupos[0] = { ...grupos[0], parroquia: 'Parroquia San José' };
+delete calendarios[sj.id];
+r = ctx.sincronizar();
+const sj2 = calDe('Parroquia San José');
+ok(sj2 && sj2 !== sj && deEn(sj2, 1), 'si borraron el calendario de una parroquia en Google, lo vuelve a crear');
+grupos = grupos.filter((g) => g.id !== 3);
+r = ctx.sincronizar();
+ok(!deEn(st, 3) && r.borrados === 1, 'un grupo borrado sale también del calendario de su parroquia');
+ok(!ajeno.borrado, 'sigue sin tocar los eventos que no creó');
+const antes = compartidos.length;
+ctx.compartirCalendarios();
+ok(compartidos.length - antes === 2 * 3, 'compartirCalendarios comparte el principal y los de cada parroquia');
 
 props.SUPABASE_KEY = 'sb_secret_abc';
 error = '';
