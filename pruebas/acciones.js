@@ -549,7 +549,16 @@ let page;
   ok(visibles.length === 2 && visibles.every((t) => t.includes('Parroquia Santa Teresita')), `grupos: el filtro deja solo los grupos de esa parroquia (${visibles.length})`);
   ok((await page.textContent('.toolbar .hint')).includes(`2 de ${totalGrupos} grupos`), 'grupos: indica cuántos se ven de cuántos');
   await page.click('[data-gvista=tiempo]');
+  ok(await page.isVisible('select[data-gparroquia]') && (await page.$eval('select[data-gparroquia]', (x) => x.value)) === 'Parroquia Santa Teresita', 'grupos: la línea de tiempo tiene el mismo filtro, con la parroquia elegida');
   ok(!(await page.textContent('.gantt, .gantt-sin, #contenido')).includes('Peregrinación Fátima'), 'grupos: la línea de tiempo también se filtra');
+  await page.selectOption('select[data-gparroquia]', 'Parroquia Nuestra Señora de Lourdes');
+  ok((await page.$eval('select[data-gparroquia]', (x) => x.value)) === 'Parroquia Nuestra Señora de Lourdes' && (await page.textContent('.toolbar .hint')).includes('2 de'), 'grupos: en la línea de tiempo se cambia el filtro');
+  if (await page.$('.gantt .vacio [data-gmes]')) {
+    await page.click('.gantt .vacio [data-gmes]');
+    ok(!!(await page.$('.gantt-fila:not(.gantt-cab)')), 'grupos: el mes vacío ofrece saltar al próximo mes con grupos de esa parroquia');
+    await page.click('[data-gmes="0"]');
+  }
+  await page.selectOption('select[data-gparroquia]', 'Parroquia Santa Teresita');
   await page.click('[data-gvista=tablero]');
   await page.click('[data-accion=grupoNuevo]');
   ok((await page.inputValue('form[data-form=grupo] input[name=parroquia]')) === 'Parroquia Santa Teresita', 'grupos: un grupo nuevo toma la parroquia del filtro');

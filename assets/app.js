@@ -2850,7 +2850,6 @@
     const nombres = [...cuenta.keys()].sort((a, b) => a.localeCompare(b, 'es'));
     if (f && f !== SIN_PARROQUIA && !cuenta.has(f)) nombres.unshift(f);
     const sin = G.lista.filter((g) => !g.parroquia).length;
-    if (!nombres.length && !f) return '';
     return `<label class="filtro-parroquia">${ico('iglesia')}<select data-gparroquia aria-label="Filtrar por parroquia">
         <option value="">Todas las parroquias</option>
         ${nombres.map((n) => `<option value="${esc(n)}"${f === n ? ' selected' : ''}>${esc(n)} (${cuenta.get(n) || 0})</option>`).join('')}
@@ -2910,6 +2909,16 @@
     }).join('')}</div>`;
   }
 
+  // Mes vacío: si es por el filtro, lo dice y ofrece saltar al próximo mes con grupos de esa parroquia
+  function vacioLinea(mes, m, y) {
+    const f = S.grupos.parroquia;
+    if (!f) return `<p class="vacio">No hay grupos de viaje en ${esc(MESES[m - 1])} de ${y}.</p>`;
+    const nombre = f === SIN_PARROQUIA ? 'sin parroquia' : `de «${esc(f)}»`;
+    const prox = gruposFiltrados().filter((g) => g.salida && g.salida.slice(0, 7) > mes).sort((a, b) => (a.salida < b.salida ? -1 : 1))[0];
+    const meses = prox ? (+prox.salida.slice(0, 4) - y) * 12 + (+prox.salida.slice(5, 7) - m) : 0;
+    return `<p class="vacio">No hay grupos ${nombre} en ${esc(MESES[m - 1])} de ${y}.${prox ? ` <button type="button" class="btn txt sm" data-gmes="${meses}">Ver ${esc(MESES[+prox.salida.slice(5, 7) - 1])} de ${prox.salida.slice(0, 4)} (${esc(prox.nombre)})</button>` : ''}</p>`;
+  }
+
   function lineaTiempoView() {
     const G = S.grupos, mes = G.mes, desde = mes + '-01', hasta = ultimoDia(mes), n = +hasta.slice(8, 10);
     const hoy = fechaEn(miTz());
@@ -2935,7 +2944,7 @@
         <button type="button" class="btn ghost sm" data-gmes="1" aria-label="Mes siguiente">${ico('der')}</button>
         ${mes !== hoy.slice(0, 7) ? '<button type="button" class="btn txt sm" data-gmes="0">Este mes</button>' : ''}
       </div>
-      <div class="card flush gantt">${enMes.length ? cab + filas : `<p class="vacio">No hay grupos de viaje en ${esc(MESES[m - 1])} de ${y}.</p>`}</div>
+      <div class="card flush gantt">${enMes.length ? cab + filas : vacioLinea(mes, m, y)}</div>
       <div class="leyenda gantt-leyenda">${COLUMNAS.map((c) => `<span><i class="gantt-punto ${c.cls}"></i>${esc(c.nombre)}</span>`).join('')}</div>
       ${sinFecha.length ? `<p class="hint">Sin fechas todavía: ${sinFecha.map((g) => `<button type="button" class="enlace" data-gabrir="${g.id}">${esc(g.nombre)}</button>`).join(', ')}.</p>` : ''}`;
   }
