@@ -175,7 +175,7 @@
     com: { lista: [], imgs: [], lect: [], filtro: 'todos', q: '', borrador: { confirmar: true }, archivos: [], borrar: null },
     lb: null,
     sol: { lista: [], adj: [], tipo: 'vacaciones', borrador: {}, archivos: [], cancelar: null, coment: {} },
-    grupos: { lista: [], vista: 'tablero', mes: '', abierto: null, borrador: {}, borrar: null, clave: null },
+    grupos: { lista: [], vista: 'tablero', parroquia: '', mes: '', abierto: null, borrador: {}, borrar: null, clave: null },
   };
 
   // ---------- Permisos de interfaz (solo muestran u ocultan) ----------
@@ -2836,12 +2836,35 @@
     if (!S.grupos.mes) S.grupos.mes = fechaEn(miTz()).slice(0, 7);
   }
 
+  // Filtro por parroquia: '' todas, '__sin' los que no tienen
+  const SIN_PARROQUIA = '__sin';
+  function gruposFiltrados() {
+    const f = S.grupos.parroquia || '';
+    if (!f) return S.grupos.lista;
+    return S.grupos.lista.filter((g) => (f === SIN_PARROQUIA ? !g.parroquia : g.parroquia === f));
+  }
+  function filtroParroquia() {
+    const G = S.grupos, f = G.parroquia || '';
+    const cuenta = new Map();
+    G.lista.forEach((g) => { if (g.parroquia) cuenta.set(g.parroquia, (cuenta.get(g.parroquia) || 0) + 1); });
+    const nombres = [...cuenta.keys()].sort((a, b) => a.localeCompare(b, 'es'));
+    if (f && f !== SIN_PARROQUIA && !cuenta.has(f)) nombres.unshift(f);
+    const sin = G.lista.filter((g) => !g.parroquia).length;
+    if (!nombres.length && !f) return '';
+    return `<label class="filtro-parroquia">${ico('iglesia')}<select data-gparroquia aria-label="Filtrar por parroquia">
+        <option value="">Todas las parroquias</option>
+        ${nombres.map((n) => `<option value="${esc(n)}"${f === n ? ' selected' : ''}>${esc(n)} (${cuenta.get(n) || 0})</option>`).join('')}
+        ${sin || f === SIN_PARROQUIA ? `<option value="${SIN_PARROQUIA}"${f === SIN_PARROQUIA ? ' selected' : ''}>Sin parroquia (${sin})</option>` : ''}
+      </select></label>${f ? '<button type="button" class="btn txt sm" data-accion="gParroquiaTodas">Quitar filtro</button>' : ''}`;
+  }
+
   function gruposView() {
     const G = S.grupos;
     const nuevo = `<button type="button" class="btn" data-accion="grupoNuevo"${G.abierto === 'nuevo' ? ' disabled' : ''}>${ico('mas')}Nuevo grupo</button>`;
     const barra = `<div class="toolbar">
         <div class="seg" role="group" aria-label="Vista">${[['tablero', 'Tablero'], ['tiempo', 'Línea de tiempo']].map(([v, n]) => `<button type="button" data-gvista="${v}" aria-pressed="${G.vista === v}">${n}</button>`).join('')}</div>
-        <span class="hint">${plural(G.lista.length, 'grupo', 'grupos')}</span>
+        ${filtroParroquia()}
+        <span class="hint">${G.parroquia ? `${gruposFiltrados().length} de ${plural(G.lista.length, 'grupo', 'grupos')}` : plural(G.lista.length, 'grupo', 'grupos')}</span>
         ${esAdmin() ? `<button type="button" class="btn ghost sm" data-accion="calClave"${ocupado('calClave')}>${ico('calendario')}Conectar Google Calendar</button>` : ''}
       </div>`;
     const clave = G.clave ? `<section class="clave card" aria-live="polite">
@@ -2875,7 +2898,7 @@
 
   function tableroView() {
     return `<div class="kanban">${COLUMNAS.map((c) => {
-      const lista = S.grupos.lista.filter((g) => g.estado === c.id);
+      const lista = gruposFiltrados().filter((g) => g.estado === c.id);
       return `<section class="kcol ${c.cls}" data-soltar="${c.id}" aria-label="${esc(c.nombre)}">
           <h2 class="kcol-h"><span>${esc(c.nombre)}</span><span class="badge">${lista.length}</span></h2>
           <div class="kcol-l">${lista.length ? lista.map(tarjetaGrupo).join('') : '<p class="vacio">Sin grupos</p>'}</div>
@@ -2887,8 +2910,8 @@
     const G = S.grupos, mes = G.mes, desde = mes + '-01', hasta = ultimoDia(mes), n = +hasta.slice(8, 10);
     const hoy = fechaEn(miTz());
     const dias = Array.from({ length: n }, (_, i) => sumarDias(desde, i));
-    const enMes = G.lista.filter((g) => g.salida && g.salida <= hasta && (g.regreso || g.salida) >= desde);
-    const sinFecha = G.lista.filter((g) => !g.salida);
+    const enMes = gruposFiltrados().filter((g) => g.salida && g.salida <= hasta && (g.regreso || g.salida) >= desde);
+    const sinFecha = gruposFiltrados().filter((g) => !g.salida);
     const cols = `--dias: ${n}`;
     const cab = `<div class="gantt-fila gantt-cab" style="${cols}"><span></span>${dias.map((d) => `<span class="${d === hoy ? 'hoy' : ''}${diaSemana(d) >= 6 ? ' finde' : ''}">${+d.slice(8, 10)}</span>`).join('')}</div>`;
     const filas = enMes.map((g) => {
@@ -2952,7 +2975,7 @@
     G.borrar = null;
     if (id === 'nuevo') {
       G.abierto = 'nuevo';
-      G.borrador = { estado: 'cotizando', responsable_id: P().id };
+      G.borrador = { estado: 'cotizando', responsable_id: P().id, parroquia: G.parroquia && G.parroquia !== SIN_PARROQUIA ? G.parroquia : '' };
     } else {
       const g = grupo(id);
       if (!g) return;
@@ -3073,6 +3096,7 @@
     if (d.accion) {
       switch (d.accion) {
         case 'menu': S.menu = !S.menu; render(); return;
+        case 'gParroquiaTodas': S.grupos.parroquia = ''; render(); return;
         case 'tcAbrir': S.tc.abierto = d.panel; S.tc.borrador = {}; S.tc.confirmar = null; S.tc.archivoRegistro = null; render(); { const f = document.querySelector('.tc-panel input:not([type=file]), .tc-panel textarea'); if (f) f.focus(); } return;
         case 'tcCerrarPanel': S.tc.abierto = null; S.tc.borrador = {}; render(); return;
         case 'tcNo': S.tc.confirmar = null; S.tc.borrar = null; render(); return;
@@ -3580,6 +3604,7 @@
       lector.readAsText(archivo, 'utf-8');
       return;
     }
+    if (d.gparroquia !== undefined) { S.grupos.parroquia = el.value; render(); return; }
     if (d.ofisede !== undefined) { S.ofi.sede = Number(el.value); S.ofi.quitar = null; render(); return; }
     const form = el.closest && el.closest('form[data-borrador]');
     if (form && el.name && (el.tagName === 'SELECT' || el.type === 'checkbox')) {

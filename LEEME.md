@@ -78,13 +78,13 @@ Como Caminos es un cliente nuevo, se fusionaron las del manual (el manual lo per
 | `009_grupos.sql` | Propia: grupos de viaje (todo el equipo activo los crea, mueve y borra), clave y lectura para Google Calendar (`calendario/LEEME.md`) |
 | `010_marcar_desde_oficina.sql` | Seguridad propia: IP real del cliente (no se puede falsificar), computadores autorizados y funciones para la pestaña Oficina |
 | `011_conciliacion.sql` | Propia: conciliación de la tarjeta de crédito (solo gerencia): tarjetas, extractos, movimientos del banco, registros de la agencia, categorías, cierre del periodo, soportes privados y tiempo real |
-| `012_grupos_parroquia.sql` | Propia: parroquia de cada grupo (tablero, línea de tiempo y Google Calendar) |
+| `012_grupos_parroquia.sql` | Propia: parroquia de cada grupo (tablero, línea de tiempo con filtro por parroquia, y Google Calendar) |
 
 ## 3. Pruebas hechas
 
 - **Permisos en Postgres** (`supabase/pruebas/correr.sh`): 204 reglas en verde (con las 28 de grupos (con la parroquia) y la clave del calendario, las 20 de marcar solo desde la oficina y las 32 de la conciliación de la tarjeta). Marcas solo con `marcar()`, orden de los pasos, bloqueo por IP, malla por sede, supervisor sin poderes de gerencia, comunicados por destinatario, solicitudes por revisor, ausencias aprobadas, `anon` sin acceso.
 - **Interfaz** (`pruebas/recorrido.js`): 4 roles × 2 anchos (1300 px y 390 px), cada pestaña (Grupos en tablero y línea de tiempo) sin desborde horizontal y sin errores de página.
-- **Acciones** (`pruebas/acciones.js`): 142 verificaciones (incluye recuperar contraseña, la pestaña Oficina, los gastos y la conciliación de la tarjeta y crear, mover, arrastrar, editar y borrar grupos), entre ellas que el informe cuadra con un cálculo manual independiente y que el CSV sale con BOM, `;` y `\r\n`.
+- **Acciones** (`pruebas/acciones.js`): 148 verificaciones (incluye recuperar contraseña, la pestaña Oficina, los gastos y la conciliación de la tarjeta y crear, mover, arrastrar, editar y borrar grupos), entre ellas que el informe cuadra con un cálculo manual independiente y que el CSV sale con BOM, `;` y `\r\n`.
 
 ```bash
 # Postgres local (usuario postgres)

@@ -710,3 +710,10 @@ tr.tc-no_reconocido td, tr.tc-no_reconocido th { background: rgba(253, 236, 234,
   .tc-gasto-campos .btn { width: 100%; }
   .tc-mes { min-width: 0; flex: 1 1 100%; }
 }
+
+/* Grupos: filtro por parroquia */
+.filtro-parroquia { display: inline-flex; align-items: center; gap: 6px; padding-left: 12px; background: var(--blanco); border: 1px solid var(--hairline); border-radius: 12px; max-width: 100%; }
+.filtro-parroquia:focus-within { border-color: var(--coral); box-shadow: 0 0 0 3px var(--coral-suave); }
+.filtro-parroquia .i { width: 18px; height: 18px; color: var(--pizarra); flex: none; }
+.toolbar .filtro-parroquia select { border: 0; background-color: transparent; box-shadow: none; min-height: 42px; max-width: 380px; min-width: 0; }
+@media (max-width: 760px) { .filtro-parroquia { flex: 1 1 100%; } .toolbar .filtro-parroquia select { max-width: none; width: 100%; } }
