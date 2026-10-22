@@ -218,7 +218,7 @@
     ['Jubilados Club Social', 'Eje Cafetero', 45, 50, 22, 'felipe', 'cotizando', ''],
     ['Grupo familiar Gómez', '', null, null, null, null, 'cotizando', ''],
   ].forEach(([nombre, destino, a, b, pax, resp, estado, alcance], i) => db.grupos.push({
-    id: i + 1, nombre, destino, salida: a == null ? null : sumarDias(HOY, a), regreso: b == null ? null : sumarDias(HOY, b), pasajeros: pax,
+    id: i + 1, nombre, destino, parroquia: ['Parroquia San José de Chapinero', 'Colegio San José', 'Parroquia Nuestra Señora de Lourdes', '', 'Parroquia Santa Teresita', 'Parroquia Nuestra Señora de Lourdes', ''][i] || '', salida: a == null ? null : sumarDias(HOY, a), regreso: b == null ? null : sumarDias(HOY, b), pasajeros: pax,
     responsable_id: resp ? ID[resp] : null, alcance, notas: '', estado, creado_por: ID.carolina, creado: sumarDias(HOY, -30) + 'T15:00:00Z',
     actualizado: sumarDias(HOY, -2) + 'T15:00:00Z', actualizado_por: ID.carolina,
   }));
@@ -371,7 +371,7 @@
     tc_extractos: () => ({ saldo_anterior: 0, saldo_nuevo: null, pago_minimo: null, fecha_pago: null, estado: 'abierto', cerrado_por: null, cerrado_en: null, notas: '', creado: ahoraISO(), creado_por: uid() }),
     tc_registros: () => ({ categoria_id: null, grupo_id: null, responsable_id: null, soporte_ruta: null, soporte_nombre: null, creado: ahoraISO(), creado_por: uid() }),
     tc_movimientos: () => ({ tipo: 'compra', moneda: 'COP', valor_origen: null, cuotas: null, autorizacion: null, categoria_id: null, grupo_id: null, responsable_id: null, estado: 'pendiente', registro_id: null, soporte_ruta: null, soporte_nombre: null, nota: '', conciliado_por: null, conciliado_en: null, creado: ahoraISO() }),
-    grupos: () => ({ destino: '', salida: null, regreso: null, pasajeros: null, responsable_id: null, alcance: '', notas: '', estado: 'cotizando', creado_por: uid(), creado: ahoraISO(), actualizado: ahoraISO(), actualizado_por: uid() }),
+    grupos: () => ({ destino: '', parroquia: '', salida: null, regreso: null, pasajeros: null, responsable_id: null, alcance: '', notas: '', estado: 'cotizando', creado_por: uid(), creado: ahoraISO(), actualizado: ahoraISO(), actualizado_por: uid() }),
   };
   const tcAbierto = (id) => db.tc_extractos.some((e) => e.id === id && e.estado === 'abierto');
   function revisarRestricciones(tabla, r) {
@@ -387,7 +387,7 @@
     if (tabla === 'solicitudes' && (r.hasta < r.desde || (!r.hora_desde) !== (!r.hora_hasta))) return err('new row for relation "solicitudes" violates check constraint', '23514');
     if (tabla === 'comunicados' && (!r.titulo || r.titulo.length > 140)) return err('new row for relation "comunicados" violates check constraint', '23514');
     if (tabla === 'revisores' && (!r.tipos || !r.tipos.length)) return err('new row for relation "revisores" violates check constraint', '23514');
-    if (tabla === 'grupos' && (!String(r.nombre || '').trim() || (r.salida && r.regreso && r.regreso < r.salida) || !['cotizando', 'confirmado', 'documentacion', 'en_viaje', 'finalizado'].includes(r.estado))) return err('new row for relation "grupos" violates check constraint', '23514');
+    if (tabla === 'grupos' && (String(r.parroquia || '').length > 120 || !String(r.nombre || '').trim() || (r.salida && r.regreso && r.regreso < r.salida) || !['cotizando', 'confirmado', 'documentacion', 'en_viaje', 'finalizado'].includes(r.estado))) return err('new row for relation "grupos" violates check constraint', '23514');
     return null;
   }
   const mismaClave = (tabla, a, b) => (CLAVES[tabla] || ['id']).every((k) => String(a[k]) === String(b[k]));

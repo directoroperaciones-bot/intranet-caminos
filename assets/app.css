@@ -437,6 +437,8 @@ tr.inactiva > * { opacity: .55; }
 .kcard-t:hover { color: var(--coral); }
 .kcard-t:focus-visible { outline: 2px solid var(--coral-foco); outline-offset: 2px; border-radius: 4px; }
 .kcard-d { font-size: 13px; color: var(--texto); }
+.kcard-p { display: flex; align-items: flex-start; gap: 5px; font-size: 12px; color: var(--pizarra); overflow-wrap: anywhere; }
+.kcard-p .i { width: 14px; height: 14px; flex: none; margin-top: 1px; }
 .kcard-f { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--pizarra); }
 .kcard-f .i, .kcard-pie .i { width: 14px; height: 14px; }
 .kcard-pie { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 13px; color: var(--pizarra); }

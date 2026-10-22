@@ -16,6 +16,13 @@ insert into grupos (nombre, creado_por, actualizado_por) values ('Falso', prueba
 select prueba.ok((select creado_por = auth.uid() and actualizado_por = auth.uid() from grupos where nombre = 'Falso'), 'no se puede crear a nombre de otra persona (la base pone a quien lo hizo)');
 delete from grupos where nombre = 'Falso';
 
+update grupos set parroquia = 'Parroquia San José de Chapinero' where nombre = 'Peregrinación Fátima';
+select prueba.ok((select parroquia = 'Parroquia San José de Chapinero' from grupos where nombre = 'Peregrinación Fátima'), 'el grupo guarda su parroquia');
+select prueba.falla($$update grupos set parroquia = repeat('x', 121) where nombre = 'Peregrinación Fátima'$$, 'la parroquia tiene máximo 120 caracteres');
+insert into grupos (nombre) values ('Sin parroquia');
+select prueba.ok((select parroquia = '' from grupos where nombre = 'Sin parroquia'), 'un grupo sin parroquia queda con el campo vacío');
+delete from grupos where nombre = 'Sin parroquia';
+
 select prueba.como('Supervisor Contable');
 select prueba.ok(prueba.filas($$update grupos set estado = 'confirmado' where nombre = 'Peregrinación Fátima'$$) = 1, 'otra persona mueve el grupo de columna');
 select prueba.ok((select actualizado_por = auth.uid() and creado_por = prueba.id('Colab Ventas') from grupos where nombre = 'Peregrinación Fátima'), 'el cambio queda a nombre de quien lo hizo y el creador no cambia');
@@ -61,7 +68,7 @@ select prueba.ok((select count(*) = 1 and bool_and(huella <> :'clave2' and huell
 
 set role anon;
 select set_config('request.jwt.claim.sub', '', false);
-select prueba.ok((select responsable = 'Colab Ventas' and destino = 'Portugal' from grupos_calendario(:'clave2')), 'Google recibe nombre, destino y responsable');
+select prueba.ok((select responsable = 'Colab Ventas' and destino = 'Portugal' and parroquia = 'Parroquia San José de Chapinero' from grupos_calendario(:'clave2')), 'Google recibe nombre, destino, parroquia y responsable');
 reset role;
 select prueba.ok(not exists (
   select 1 from pg_proc p, unnest(p.proargnames) a where p.proname = 'grupos_calendario' and a = 'notas'), 'grupos_calendario no tiene columna «notas»');

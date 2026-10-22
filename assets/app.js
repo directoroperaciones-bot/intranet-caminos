@@ -103,6 +103,7 @@
     libro: '<path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/>',
     volver: '<path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/>',
     cotizador: '<rect width="16" height="20" x="4" y="2" rx="2"/><line x1="8" x2="16" y1="6" y2="6"/><line x1="16" x2="16" y1="14" y2="18"/><path d="M16 10h.01"/><path d="M12 10h.01"/><path d="M8 10h.01"/><path d="M12 14h.01"/><path d="M8 14h.01"/><path d="M12 18h.01"/><path d="M8 18h.01"/>',
+    iglesia: '<path d="M10 9h4"/><path d="M12 7v5"/><path d="M14 22v-4a2 2 0 0 0-4 0v4"/><path d="M18 22V5.618a1 1 0 0 0-.553-.894l-4.553-2.277a2 2 0 0 0-1.788 0L6.553 4.724A1 1 0 0 0 6 5.618V22"/><path d="m18 7 3.447 1.724a1 1 0 0 1 .553.894V20a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V9.618a1 1 0 0 1 .553-.894L6 7"/>',
     tarjeta: '<rect width="20" height="14" x="2" y="5" rx="2"/><line x1="2" x2="22" y1="10" y2="10"/>',
     escudo: '<path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/>',
     monitor: '<rect width="20" height="14" x="2" y="3" rx="2"/><line x1="8" x2="16" y1="21" y2="21"/><line x1="12" x2="12" y1="17" y2="21"/>',
@@ -2748,7 +2749,7 @@
         </ul>` },
       { id: 'grupos', titulo: 'Grupos de viaje', ver: true, html: `<ul>
           <li><b>Tablero:</b> cada grupo es una tarjeta en una de cinco columnas: Cotizando, Confirmado, Documentación lista, En viaje y Finalizado. Arrástrala a otra columna o usa las flechas de la tarjeta (en el celular, desliza para ver las demás columnas).</li>
-          <li><b>Nuevo grupo:</b> nombre, destino, fechas de salida y regreso, pasajeros, responsable, alcance y notas internas. Toca el nombre de una tarjeta para cambiarla o eliminarla.</li>
+          <li><b>Nuevo grupo:</b> nombre, destino, parroquia, fechas de salida y regreso, pasajeros, responsable, alcance y notas internas. Toca el nombre de una tarjeta para cambiarla o eliminarla.</li>
           <li><b>Línea de tiempo:</b> cada grupo con fechas es una barra del día de salida al de regreso; cambia de mes con las flechas.</li>
           <li><b>Google Calendar:</b> los grupos con fechas aparecen solos en el calendario compartido «Grupos Caminos» (puede tardar unos minutos). Las notas internas no van al calendario.</li>
           <li>Todo el equipo puede crear, mover, cambiar y eliminar grupos; cada tarjeta guarda quién hizo el último cambio.</li>
@@ -2860,6 +2861,7 @@
     return `<article class="kcard" draggable="true" data-arrastrar="${g.id}">
         <button type="button" class="kcard-t" data-gabrir="${g.id}">${esc(g.nombre)}</button>
         ${g.destino ? `<span class="kcard-d">${esc(g.destino)}</span>` : ''}
+        ${g.parroquia ? `<span class="kcard-p">${ico('iglesia')}${esc(g.parroquia)}</span>` : ''}
         <span class="kcard-f">${ico('calendario')}${esc(fechasGrupo(g))}</span>
         <div class="kcard-pie">
           <span>${g.pasajeros != null ? `${ico('usuarios')}${g.pasajeros}` : ''}${resp ? `<span class="avatar sm" title="${esc(resp.nombre)}">${esc(initials(resp.nombre))}</span>` : ''}</span>
@@ -2895,7 +2897,7 @@
       const b = fin > hasta ? n : +fin.slice(8, 10);
       const c = columna(g.estado);
       return `<div class="gantt-fila" style="${cols}">
-          <button type="button" class="gantt-nom" data-gabrir="${g.id}"><b>${esc(g.nombre)}</b><small>${esc([g.destino, c.nombre].filter(Boolean).join(' · '))}</small><small class="gantt-fechas">${esc(fechasGrupo(g))}</small></button>
+          <button type="button" class="gantt-nom" data-gabrir="${g.id}"><b>${esc(g.nombre)}</b><small>${esc([g.destino, g.parroquia, c.nombre].filter(Boolean).join(' · '))}</small><small class="gantt-fechas">${esc(fechasGrupo(g))}</small></button>
           <span class="gantt-barra ${c.cls}${g.salida < desde ? ' sigue-antes' : ''}${fin > hasta ? ' sigue-despues' : ''}" style="grid-column: ${a + 1} / ${b + 2}" title="${esc(g.nombre + ' · ' + fechasGrupo(g))}">${esc(fechasGrupo(g))}</span>
         </div>`;
     }).join('');
@@ -2923,6 +2925,7 @@
           <div class="form-grid">
             <label class="field"><span>Nombre del grupo</span><input name="nombre" value="${esc(b.nombre || '')}" maxlength="120" required autocomplete="off" placeholder="Peregrinación Fátima y Lourdes"></label>
             <label class="field"><span>Destino</span><input name="destino" value="${esc(b.destino || '')}" maxlength="120" autocomplete="off" placeholder="Portugal y Francia"></label>
+            <label class="field"><span>Parroquia</span><input name="parroquia" value="${esc(b.parroquia || '')}" maxlength="120" autocomplete="off" placeholder="Parroquia San José de Chapinero" list="parroquias"><datalist id="parroquias">${[...new Set(S.grupos.lista.map((x) => x.parroquia).filter(Boolean))].sort((x, y) => x.localeCompare(y, 'es')).map((x) => `<option value="${esc(x)}">`).join('')}</datalist></label>
             <label class="field"><span>Salida</span><input name="salida" type="date" value="${esc(b.salida || '')}"></label>
             <label class="field"><span>Regreso</span><input name="regreso" type="date" value="${esc(b.regreso || '')}"${b.salida ? ` min="${esc(b.salida)}"` : ''}></label>
             <label class="field"><span>Pasajeros</span><input name="pasajeros" type="number" min="0" max="9999" inputmode="numeric" value="${esc(b.pasajeros == null ? '' : b.pasajeros)}"></label>
@@ -2954,7 +2957,7 @@
       const g = grupo(id);
       if (!g) return;
       G.abierto = g.id;
-      G.borrador = { nombre: g.nombre, destino: g.destino, salida: g.salida || '', regreso: g.regreso || '', pasajeros: g.pasajeros == null ? '' : g.pasajeros, responsable_id: g.responsable_id || '', estado: g.estado, alcance: g.alcance, notas: g.notas };
+      G.borrador = { nombre: g.nombre, destino: g.destino, parroquia: g.parroquia || '', salida: g.salida || '', regreso: g.regreso || '', pasajeros: g.pasajeros == null ? '' : g.pasajeros, responsable_id: g.responsable_id || '', estado: g.estado, alcance: g.alcance, notas: g.notas };
     }
     foco = 'form[data-form=grupo] input[name=nombre]';
     render();
@@ -2964,7 +2967,7 @@
   async function guardarGrupo() {
     const G = S.grupos, b = G.borrador;
     const fila = {
-      nombre: String(b.nombre || '').trim(), destino: String(b.destino || '').trim(),
+      nombre: String(b.nombre || '').trim(), destino: String(b.destino || '').trim(), parroquia: String(b.parroquia || '').trim(),
       salida: b.salida || null, regreso: b.regreso || null,
       pasajeros: b.pasajeros === '' || b.pasajeros == null ? null : Math.round(+b.pasajeros),
       responsable_id: b.responsable_id || null, estado: b.estado || 'cotizando',

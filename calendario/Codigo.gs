@@ -4,7 +4,7 @@
    «Grupos Caminos». Corre solo cada 10 minutos. Pasos de instalación en
    calendario/LEEME.md.
 
-   - Solo lee: usa grupos_calendario(clave), que entrega nombre, destino,
+   - Solo lee: usa grupos_calendario(clave), que entrega nombre, destino, parroquia,
      fechas, pasajeros, responsable, alcance y columna (nunca las notas).
    - Solo toca los eventos que él mismo creó (marcados con «grupo_id»):
      los demás eventos del calendario no se tocan.
@@ -134,6 +134,7 @@ function evento_(g) {
   var lineas = [
     'Columna: ' + col.nombre,
     g.destino ? 'Destino: ' + g.destino : '',
+    g.parroquia ? 'Parroquia: ' + g.parroquia : '',
     'Salida: ' + g.salida + (g.regreso ? ' · Regreso: ' + g.regreso : ''),
     g.pasajeros != null ? 'Pasajeros: ' + g.pasajeros : '',
     g.responsable ? 'Responsable: ' + g.responsable : '',
