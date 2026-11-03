@@ -74,6 +74,7 @@
       { id: 1, nombre: 'Gestor de reservas', descripcion: 'La app de operación de Caminos: ventas, reservas, pasajeros y proveedores.', icono: 'reservas', pie: 'AppSheet', url: 'https://www.appsheet.com/start/eb769707-eafd-445c-aa00-eb637321ef76#appName=GESTORDERESERVAS-CAMINOS2-850658711&view=INICIO', orden: 1, areas_visibles: null, activo: true },
       { id: 2, nombre: 'Caminos Documentos', descripcion: 'Cotizaciones, confirmaciones, vouchers e itinerarios con el diseño de Caminos.', icono: 'documentos', pie: 'Claude', url: 'https://claude.ai/artifact/WPzKkP7MwdKBaGrrGVpZ1Y', orden: 2, areas_visibles: null, activo: true },
       { id: 3, nombre: 'Cotizador OMNIAXIS', descripcion: 'Plantilla maestra del cotizador.', icono: 'cotizador', pie: 'Google Sheets', url: 'https://docs.google.com/spreadsheets/d/1n_wPCi90RUk69Yiclf-Uc1viJZIWQs7Qc1Z5k1ZUWM0/edit?gid=131584006#gid=131584006', orden: 3, areas_visibles: null, activo: true },
+      { id: 4, nombre: 'Página web de Caminos', descripcion: 'El sitio oficial de la agencia, el que ven los clientes.', icono: 'globo', pie: 'Sitio web', url: 'https://agenciacaminos.com.co/', orden: 4, areas_visibles: null, activo: true },
     ],
     comunicados: [], comunicado_imagenes: [], comunicado_lecturas: [], solicitudes: [], solicitud_adjuntos: [], revisores: [],
     grupos: [], equipos: [],

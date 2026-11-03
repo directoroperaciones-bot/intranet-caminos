@@ -48,7 +48,12 @@ insert into herramientas (nombre, descripcion, icono, pie, url, orden) values
    'Plantilla maestra del cotizador.',
    'cotizador', 'Google Sheets',
    'https://docs.google.com/spreadsheets/d/1n_wPCi90RUk69Yiclf-Uc1viJZIWQs7Qc1Z5k1ZUWM0/edit?gid=131584006#gid=131584006',
-   3);
+   3),
+  ('Página web de Caminos',
+   'El sitio oficial de la agencia, el que ven los clientes.',
+   'globo', 'Sitio web',
+   'https://agenciacaminos.com.co/',
+   4);
 
 -- Configuración
 insert into configuracion (clave, valor) values
