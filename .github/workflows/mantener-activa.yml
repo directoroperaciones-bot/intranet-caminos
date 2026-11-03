@@ -1,0 +1,28 @@
+# Mantiene activo el proyecto de Supabase: el plan gratis lo pausa tras
+# 7 días sin uso y la intranet deja de responder. Corre una vez al día y
+# también se puede correr a mano (Actions → Mantener activa → Run workflow).
+name: Mantener activa
+on:
+  schedule:
+    - cron: '17 11 * * *'   # 6:17 a. m. en Bogotá
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  latido:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Llamar a latido() en Supabase
+        run: |
+          set -eu
+          URL='https://psclplnwvfksckogkcrz.supabase.co'
+          KEY='sb_publishable_Ql7KwcxhFrB_lqG-FB_cfw_1e_k1S87'   # llave publicable (la misma de assets/config.js)
+          for i in 1 2 3 4 5; do
+            codigo=$(curl -s -o respuesta.txt -w '%{http_code}' -X POST "$URL/rest/v1/rpc/latido" \
+              -H "apikey: $KEY" -H 'Content-Type: application/json' -d '{}' || true)
+            echo "Intento $i: $codigo $(cat respuesta.txt 2>/dev/null)"
+            if [ "$codigo" = "200" ]; then exit 0; fi
+            sleep 60
+          done
+          echo '::error::Supabase no respondió. Revisa si el proyecto está pausado en supabase.com y reactívalo (Restore).'
+          exit 1

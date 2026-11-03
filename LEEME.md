@@ -79,6 +79,7 @@ Como Caminos es un cliente nuevo, se fusionaron las del manual (el manual lo per
 | `010_marcar_desde_oficina.sql` | Seguridad propia: IP real del cliente (no se puede falsificar), computadores autorizados y funciones para la pestaña Oficina |
 | `011_conciliacion.sql` | Propia: conciliación de la tarjeta de crédito (solo gerencia): tarjetas, extractos, movimientos del banco, registros de la agencia, categorías, cierre del periodo, soportes privados y tiempo real |
 | `012_grupos_parroquia.sql` | Propia: parroquia de cada grupo (tablero, línea de tiempo con filtro por parroquia, y Google Calendar) |
+| `013_latido.sql` | Propia: `latido()` para que el plan gratis de Supabase no pause el proyecto (la llama `.github/workflows/mantener-activa.yml` cada día) |
 
 ## 3. Pruebas hechas
 
@@ -129,6 +130,14 @@ Dos pasos:
 - **Tiempo real**: la pantalla se suscribe a los cambios de `tc_movimientos`, `tc_registros` y `tc_extractos` (publicación `supabase_realtime`); un cambio hecho en otro equipo aparece sin recargar.
 - **Cierre**: solo sin pendientes. Cerrado, la base no deja editar nada (disparador), salvo reabrir. Las facturas van al depósito privado `conciliacion`, con enlaces firmados de 1 hora.
 - De la tarjeta solo se guardan los **últimos 4 dígitos**.
+
+## 3e. Que el servidor no se apague
+
+El plan gratis de Supabase **pausa el proyecto tras 7 días sin uso**: la intranet muestra «No hay conexión con el servidor» hasta que alguien lo reactiva en supabase.com (botón *Restore*, tarda unos minutos). Pasó el 3 de noviembre de 2026.
+
+- **Prevención gratis:** la tarea de GitHub `.github/workflows/mantener-activa.yml` llama cada día a `latido()` (solo devuelve la hora; no toca datos). Si falla, GitHub avisa por correo. GitHub apaga las tareas programadas de un repositorio público tras 60 días sin cambios: si eso pasa, se reactiva en *Actions → Mantener activa → Enable workflow*.
+- **Solución definitiva:** el plan Pro de Supabase (USD 25 al mes) no pausa nunca y suma copias de seguridad diarias. Recomendado cuando el equipo use la intranet a diario.
+- Cuando el equipo marque asistencia todos los días, el proyecto no llega a pausarse.
 
 ## 4. Pendientes y decisiones
 
