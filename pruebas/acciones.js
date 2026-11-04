@@ -573,7 +573,7 @@ let page;
   ok(await avisa('Confirmado'), 'grupos: la flecha mueve a la columna siguiente');
   await esperar();
   ok(await enColumna('confirmado', 'Prueba Medellín'), 'grupos: queda en Confirmado');
-  await page.locator('.kcard', { hasText: 'Prueba Medellín' }).dragTo(page.locator('[data-soltar="en_viaje"]'));
+  await page.locator('.kcard', { hasText: 'Prueba Medellín' }).dragTo(page.locator('[data-soltar="en_viaje"]'), { targetPosition: { x: 60, y: 40 } });
   ok(await avisa('En viaje'), 'grupos: arrastrar la tarjeta la mueve de columna');
   await esperar();
   ok(await enColumna('en_viaje', 'Prueba Medellín'), 'grupos: queda en En viaje');

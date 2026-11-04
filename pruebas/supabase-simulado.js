@@ -218,8 +218,13 @@
     ['Pasadía Chiquinquirá', 'Chiquinquirá', -20, -20, 35, 'valentina', 'finalizado', 'Bus, almuerzo y visita a la basílica.'],
     ['Jubilados Club Social', 'Eje Cafetero', 45, 50, 22, 'felipe', 'cotizando', ''],
     ['Grupo familiar Gómez', '', null, null, null, null, 'cotizando', ''],
+    ['Ruta colonial Mompox', 'Mompox', 8, 11, 32, 'daniela', 'confirmado', 'Bus, hotel en el centro histórico, paseo en chalupa por el río Magdalena y guía local.'],
+    ['Peregrinación Las Lajas', 'Ipiales', 12, 15, 26, 'santiago', 'documentacion', 'Aéreos Bogotá–Pasto, hotel, traslados al santuario y misa en Las Lajas.'],
+    ['Navidad en Villa de Leyva', 'Villa de Leyva', 40, 41, 40, 'valentina', 'cotizando', 'Bus, almuerzo típico y recorrido por el alumbrado navideño.'],
+    ['Semana Santa en Popayán', 'Popayán', 155, 160, 34, 'felipe', 'cotizando', 'Aéreos, hotel y procesiones de Semana Santa.'],
   ].forEach(([nombre, destino, a, b, pax, resp, estado, alcance], i) => db.grupos.push({
-    id: i + 1, nombre, destino, parroquia: ['Parroquia San José de Chapinero', 'Colegio San José', 'Parroquia Nuestra Señora de Lourdes', '', 'Parroquia Santa Teresita', 'Parroquia Nuestra Señora de Lourdes', ''][i] || '', salida: a == null ? null : sumarDias(HOY, a), regreso: b == null ? null : sumarDias(HOY, b), pasajeros: pax,
+    id: i + 1, nombre, destino, parroquia: ['Parroquia San José de Chapinero', 'Colegio San José', 'Parroquia Nuestra Señora de Lourdes', '', 'Parroquia Santa Teresita', 'Parroquia Nuestra Señora de Lourdes', '',
+      'Parroquia San Francisco de Asís', 'Parroquia San José de Chapinero', 'Parroquia La Valvanera', 'Parroquia San Francisco de Asís'][i] || '', salida: a == null ? null : sumarDias(HOY, a), regreso: b == null ? null : sumarDias(HOY, b), pasajeros: pax,
     responsable_id: resp ? ID[resp] : null, alcance, notas: '', estado, creado_por: ID.carolina, creado: sumarDias(HOY, -30) + 'T15:00:00Z',
     actualizado: sumarDias(HOY, -2) + 'T15:00:00Z', actualizado_por: ID.carolina,
   }));
