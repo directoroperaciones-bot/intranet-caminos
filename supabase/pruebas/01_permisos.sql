@@ -281,15 +281,15 @@ select prueba.ok(prueba.filas($$update perfiles set rol = 'colaborador' where no
 -- =====================================================================
 \echo '--- Herramientas y configuración'
 select prueba.como('Colab Ventas');
-select prueba.ok(prueba.cuenta($$select 1 from herramientas$$) = 3, 'el equipo ve las 3 herramientas de Caminos');
+select prueba.ok(prueba.cuenta($$select 1 from herramientas$$) = 4, 'el equipo ve las 4 herramientas de Caminos (con la página web)');
 select prueba.ok(prueba.filas($$update configuracion set valor = '{"activo": true}' where clave = 'modulo_solicitudes'$$) = 0, 'un colaborador no cambia la configuración');
 select prueba.ok(prueba.filas($$update herramientas set nombre = 'X'$$) = 0, 'un colaborador no cambia herramientas');
 reset role;
 update herramientas set areas_visibles = array[(select id from areas where nombre = 'Contabilidad')] where nombre = 'Cotizador OMNIAXIS';
 select prueba.como('Colab Ventas');
-select prueba.ok(prueba.cuenta($$select 1 from herramientas$$) = 2, 'una herramienta limitada a un área no aparece en otras');
+select prueba.ok(prueba.cuenta($$select 1 from herramientas$$) = 3, 'una herramienta limitada a un área no aparece en otras');
 select prueba.como('Gerencia Admin');
-select prueba.ok(prueba.cuenta($$select 1 from herramientas$$) = 3, 'la gerencia ve todas');
+select prueba.ok(prueba.cuenta($$select 1 from herramientas$$) = 4, 'la gerencia ve todas');
 reset role;
 update herramientas set areas_visibles = null;
 

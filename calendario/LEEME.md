@@ -4,10 +4,12 @@ Los grupos con fechas de la intranet aparecen solos en un calendario compartido 
 
 | Columna | Color en Google |
 | --- | --- |
-| Cotizando | Azul claro (y «(cotizando)» en el título) |
-| Confirmado | Verde |
-| Documentación lista | Amarillo |
-| En viaje | Rojo |
+| Cotización / costeo | Azul claro (y «(en cotización)» en el título) |
+| Propuesta comercial | Morado |
+| Aprobado parroquia | Verde |
+| Gestión comercial, bloqueos, lanzamiento | Turquesa |
+| Ejecución grupo | Amarillo |
+| En destino | Rojo |
 | Finalizado | Gris |
 
 El evento trae destino, parroquia, fechas, pasajeros, responsable y alcance. Las **notas internas no salen** de la intranet. Un programa gratis de Google (Apps Script) revisa la intranet **cada 10 minutos**: crea, cambia o borra los eventos. Los cambios se hacen siempre en la intranet; si alguien cambia un evento en Google, se pierde en la siguiente vuelta.

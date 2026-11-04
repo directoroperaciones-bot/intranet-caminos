@@ -42,7 +42,7 @@ const ctx = {
   Logger: { log() {} },
   PropertiesService: { getScriptProperties: () => ({ getProperties: () => ({ ...props }), getProperty: (k) => props[k] || null, setProperty: (k, v) => { props[k] = v; } }) },
   CalendarApp: {
-    EventColor: { PALE_BLUE: '1', GREEN: '10', YELLOW: '5', RED: '11', GRAY: '8' },
+    EventColor: { PALE_BLUE: '1', MAUVE: '3', CYAN: '7', GREEN: '10', YELLOW: '5', RED: '11', GRAY: '8' },
     getCalendarById: (id) => calendarios[id] || null,
     createCalendar: (n, opc) => { const c = nuevoCalendario(n); c.nombre = n; c.opc = opc; calendarios[c.id] = c; return c; },
   },
@@ -79,9 +79,9 @@ const e1 = de(1);
 ok(e1.titulo === 'Peregrinación Fátima · Portugal', `título con nombre y destino («${e1.titulo}»)`);
 ok(iso(e1.inicio) === '2026-11-01' && iso(e1.fin) === '2026-11-14', 'todo el día del 1 al 13 de noviembre (Google cuenta hasta el 14 sin incluirlo)');
 ok(/Responsable: Carolina/.test(e1.descripcion) && /Pasajeros: 28/.test(e1.descripcion) && /Aéreos y hoteles/.test(e1.descripcion), 'la descripción trae responsable, pasajeros y alcance');
-ok(e1.color === '10', 'color según la columna (Confirmado: verde)');
+ok(e1.color === '10', 'color según la columna (Aprobado parroquia: verde)');
 const e2 = de(2);
-ok(e2.titulo === 'Pasadía Chiquinquirá (cotizando)' && iso(e2.fin) === '2026-10-26', 'grupo de un día y en Cotizando');
+ok(e2.titulo === 'Pasadía Chiquinquirá (en cotización)' && iso(e2.fin) === '2026-10-26', 'grupo de un día y en Cotización / costeo');
 ok(disparadores.length === 1 && disparadores[0].m === 10, 'queda programado cada 10 minutos');
 ctx.instalar();
 ok(disparadores.length === 1, 'instalar dos veces no duplica la programación');
@@ -93,6 +93,9 @@ grupos[0] = { ...grupos[0], estado: 'en_viaje', regreso: '2026-11-15' };
 r = ctx.sincronizar();
 ok(r.cambiados === 1 && de(1).id === e1.id && iso(de(1).fin) === '2026-11-16' && de(1).color === '11', 'al mover o cambiar fechas actualiza el mismo evento');
 
+grupos[1] = { ...grupos[1], estado: 'gestion' };
+r = ctx.sincronizar();
+ok(de(2).color === '7' && /Columna: Gestión comercial, bloqueos, lanzamiento/.test(de(2).descripcion) && !/cotización/.test(de(2).titulo), 'las columnas nuevas tienen su nombre y su color en Google');
 grupos = grupos.slice(0, 1);
 r = ctx.sincronizar();
 ok(r.borrados === 1 && !de(2), 'si el grupo se borra o pierde sus fechas, su evento se borra');

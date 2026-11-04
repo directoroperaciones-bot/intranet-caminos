@@ -2749,7 +2749,7 @@
           <li>Si tienes vacaciones, permiso o incapacidad aprobados, ese día no tienes que marcar.</li>
         </ul>` },
       { id: 'grupos', titulo: 'Grupos de viaje', ver: true, html: `<ul>
-          <li><b>Tablero:</b> cada grupo es una tarjeta en una de cinco columnas: Cotizando, Confirmado, Documentación lista, En viaje y Finalizado. Arrástrala a otra columna o usa las flechas de la tarjeta (en el celular, desliza para ver las demás columnas).</li>
+          <li><b>Tablero:</b> cada grupo es una tarjeta en una de siete columnas: Cotización / costeo, Propuesta comercial, Aprobado parroquia, Gestión comercial (bloqueos y lanzamiento), Ejecución grupo, En destino y Finalizado. Arrástrala a otra columna o usa las flechas de la tarjeta (en el celular, desliza para ver las demás columnas).</li>
           <li><b>Nuevo grupo:</b> nombre, destino, parroquia, fechas de salida y regreso, pasajeros, responsable, alcance y notas internas. Toca el nombre de una tarjeta para cambiarla o eliminarla.</li>
           <li><b>Línea de tiempo:</b> cada grupo con fechas es una barra del día de salida al de regreso; cambia de mes con las flechas.</li>
           <li><b>Google Calendar:</b> los grupos con fechas aparecen solos (puede tardar unos minutos). Cada parroquia tiene su calendario, «Grupos · nombre de la parroquia»; los grupos sin parroquia van a «Grupos Caminos». Para filtrar por parroquia, marca o desmarca esos calendarios en Google Calendar. Las notas internas no van al calendario.</li>
@@ -2816,10 +2816,12 @@
   // Todo el equipo activo crea, mueve y borra grupos. Google Calendar los recibe
   // con un programa de Google (calendario/LEEME.md) que usa grupos_calendario().
   const COLUMNAS = [
-    { id: 'cotizando', nombre: 'Cotizando', cls: 'c1' },
-    { id: 'confirmado', nombre: 'Confirmado', cls: 'c2' },
-    { id: 'documentacion', nombre: 'Documentación lista', cls: 'c3' },
-    { id: 'en_viaje', nombre: 'En viaje', cls: 'c4' },
+    { id: 'cotizando', nombre: 'Cotización / costeo', cls: 'c1' },
+    { id: 'propuesta', nombre: 'Propuesta comercial', cls: 'c6' },
+    { id: 'confirmado', nombre: 'Aprobado parroquia', cls: 'c2' },
+    { id: 'gestion', nombre: 'Gestión comercial, bloqueos, lanzamiento', cls: 'c7' },
+    { id: 'documentacion', nombre: 'Ejecución grupo', cls: 'c3' },
+    { id: 'en_viaje', nombre: 'En destino', cls: 'c4' },
     { id: 'finalizado', nombre: 'Finalizado', cls: 'c5' },
   ];
   const columna = (id) => COLUMNAS.find((c) => c.id === id) || COLUMNAS[0];

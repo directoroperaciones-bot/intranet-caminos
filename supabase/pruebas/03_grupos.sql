@@ -28,7 +28,10 @@ select prueba.ok(prueba.filas($$update grupos set estado = 'confirmado' where no
 select prueba.ok((select actualizado_por = auth.uid() and creado_por = prueba.id('Colab Ventas') from grupos where nombre = 'Peregrinación Fátima'), 'el cambio queda a nombre de quien lo hizo y el creador no cambia');
 select prueba.falla($$update grupos set regreso = salida - 1 where nombre = 'Peregrinación Fátima'$$, 'el regreso no puede ser antes de la salida');
 select prueba.falla($$insert into grupos (nombre) values ('   ')$$, 'un grupo necesita nombre');
-select prueba.falla($$update grupos set estado = 'perdido' where nombre = 'Peregrinación Fátima'$$, 'solo existen las cinco columnas');
+select prueba.ok(prueba.filas($$update grupos set estado = 'propuesta' where nombre = 'Peregrinación Fátima'$$) = 1 and prueba.filas($$update grupos set estado = 'gestion' where nombre = 'Peregrinación Fátima'$$) = 1, 'existen las columnas nuevas (propuesta comercial y gestión comercial)');
+select prueba.ok((select array_agg(e order by e)::text from unnest(enum_range(null::grupo_estado_t)) e) = '{cotizando,propuesta,confirmado,gestion,documentacion,en_viaje,finalizado}', 'las siete columnas van en el orden del flujo');
+update grupos set estado = 'confirmado' where nombre = 'Peregrinación Fátima';
+select prueba.falla($$update grupos set estado = 'perdido' where nombre = 'Peregrinación Fátima'$$, 'solo existen las siete columnas');
 
 select prueba.como('Colab Otra Sede');
 select prueba.ok(prueba.cuenta($$select 1 from grupos$$) = 1, 'una persona de otra sede también ve los grupos');

@@ -219,8 +219,8 @@
     ['Jubilados Club Social', 'Eje Cafetero', 45, 50, 22, 'felipe', 'cotizando', ''],
     ['Grupo familiar Gómez', '', null, null, null, null, 'cotizando', ''],
     ['Ruta colonial Mompox', 'Mompox', 8, 11, 32, 'daniela', 'confirmado', 'Bus, hotel en el centro histórico, paseo en chalupa por el río Magdalena y guía local.'],
-    ['Peregrinación Las Lajas', 'Ipiales', 12, 15, 26, 'santiago', 'documentacion', 'Aéreos Bogotá–Pasto, hotel, traslados al santuario y misa en Las Lajas.'],
-    ['Navidad en Villa de Leyva', 'Villa de Leyva', 40, 41, 40, 'valentina', 'cotizando', 'Bus, almuerzo típico y recorrido por el alumbrado navideño.'],
+    ['Peregrinación Las Lajas', 'Ipiales', 12, 15, 26, 'santiago', 'gestion', 'Aéreos Bogotá–Pasto, hotel, traslados al santuario y misa en Las Lajas.'],
+    ['Navidad en Villa de Leyva', 'Villa de Leyva', 40, 41, 40, 'valentina', 'propuesta', 'Bus, almuerzo típico y recorrido por el alumbrado navideño.'],
     ['Semana Santa en Popayán', 'Popayán', 155, 160, 34, 'felipe', 'cotizando', 'Aéreos, hotel y procesiones de Semana Santa.'],
   ].forEach(([nombre, destino, a, b, pax, resp, estado, alcance], i) => db.grupos.push({
     id: i + 1, nombre, destino, parroquia: ['Parroquia San José de Chapinero', 'Colegio San José', 'Parroquia Nuestra Señora de Lourdes', '', 'Parroquia Santa Teresita', 'Parroquia Nuestra Señora de Lourdes', '',
@@ -393,7 +393,7 @@
     if (tabla === 'solicitudes' && (r.hasta < r.desde || (!r.hora_desde) !== (!r.hora_hasta))) return err('new row for relation "solicitudes" violates check constraint', '23514');
     if (tabla === 'comunicados' && (!r.titulo || r.titulo.length > 140)) return err('new row for relation "comunicados" violates check constraint', '23514');
     if (tabla === 'revisores' && (!r.tipos || !r.tipos.length)) return err('new row for relation "revisores" violates check constraint', '23514');
-    if (tabla === 'grupos' && (String(r.parroquia || '').length > 120 || !String(r.nombre || '').trim() || (r.salida && r.regreso && r.regreso < r.salida) || !['cotizando', 'confirmado', 'documentacion', 'en_viaje', 'finalizado'].includes(r.estado))) return err('new row for relation "grupos" violates check constraint', '23514');
+    if (tabla === 'grupos' && (String(r.parroquia || '').length > 120 || !String(r.nombre || '').trim() || (r.salida && r.regreso && r.regreso < r.salida) || !['cotizando', 'propuesta', 'confirmado', 'gestion', 'documentacion', 'en_viaje', 'finalizado'].includes(r.estado))) return err('new row for relation "grupos" violates check constraint', '23514');
     return null;
   }
   const mismaClave = (tabla, a, b) => (CLAVES[tabla] || ['id']).every((k) => String(a[k]) === String(b[k]));

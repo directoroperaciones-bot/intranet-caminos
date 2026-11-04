@@ -18,10 +18,12 @@
 var CALENDARIO_NOMBRE = 'Grupos Caminos';
 var PREFIJO_PARROQUIA = 'Grupos · ';
 var COLUMNAS = {
-  cotizando: { nombre: 'Cotizando', color: 'PALE_BLUE' },
-  confirmado: { nombre: 'Confirmado', color: 'GREEN' },
-  documentacion: { nombre: 'Documentación lista', color: 'YELLOW' },
-  en_viaje: { nombre: 'En viaje', color: 'RED' },
+  cotizando: { nombre: 'Cotización / costeo', color: 'PALE_BLUE' },
+  propuesta: { nombre: 'Propuesta comercial', color: 'MAUVE' },
+  confirmado: { nombre: 'Aprobado parroquia', color: 'GREEN' },
+  gestion: { nombre: 'Gestión comercial, bloqueos, lanzamiento', color: 'CYAN' },
+  documentacion: { nombre: 'Ejecución grupo', color: 'YELLOW' },
+  en_viaje: { nombre: 'En destino', color: 'RED' },
   finalizado: { nombre: 'Finalizado', color: 'GRAY' },
 };
 
@@ -207,7 +209,7 @@ function leerGrupos_(props) {
 
 function evento_(g) {
   var col = COLUMNAS[g.estado] || COLUMNAS.cotizando;
-  var titulo = g.nombre + (g.destino ? ' · ' + g.destino : '') + (g.estado === 'cotizando' ? ' (cotizando)' : '');
+  var titulo = g.nombre + (g.destino ? ' · ' + g.destino : '') + (g.estado === 'cotizando' ? ' (en cotización)' : '');
   var lineas = [
     'Columna: ' + col.nombre,
     g.destino ? 'Destino: ' + g.destino : '',
