@@ -508,6 +508,51 @@ let page;
   await esperar();
   }
 
+  // ---------- Malla: horario que rota por semanas ----------
+  {
+    const DANI = 'a0000000-0000-4000-8000-000000000004';
+    await entrar('carolina.mendez@caminos.example');
+    await ir('malla');
+    await page.click('[data-mvista=fijo]');
+    await esperar();
+    await page.selectOption(`select[data-rota="${DANI}"]`, '2');
+    ok(await avisa('Rotación de 2 semanas'), 'rotación: activa «Rota cada semana»');
+    await esperar();
+    const filasDani = page.locator('table.malla tbody tr', { hasText: 'Daniela Castro' });
+    ok((await filasDani.count()) === 2 && (await filasDani.nth(0).textContent()).includes('Semana A') && (await filasDani.nth(1).textContent()).includes('Semana B'), 'rotación: aparecen su semana A y su semana B');
+    ok((await filasDani.nth(1).locator('.celda').first().textContent()) === (await filasDani.nth(0).locator('.celda').first().textContent()), 'rotación: la semana B empieza como copia de la A');
+    await filasDani.nth(1).locator(`[data-editar="b|${DANI}|2-1"]`).click();
+    await page.selectOption('select.shift', '3');
+    ok(await avisa('Horario fijo actualizado'), 'rotación: cambia el lunes de la semana B');
+    await esperar();
+    await page.click('[data-mvista=semana]');
+    await esperar();
+    const filaSem = () => page.locator('table.malla tbody tr', { hasText: 'Daniela Castro' });
+    const letra1 = (await filaSem().locator('.sem-rot').textContent()).trim();
+    const lunes1 = (await filaSem().locator('td').first().textContent()).trim();
+    const rango = () => page.textContent('.weeknav b');
+    const r1 = await rango();
+    await page.click('[data-semana="7"]');
+    await page.waitForFunction((r) => document.querySelector('.weeknav b').textContent !== r, r1);
+    await esperar();
+    const letra2 = (await filaSem().locator('.sem-rot').textContent()).trim();
+    const lunes2 = (await filaSem().locator('td').first().textContent()).trim();
+    ok(letra1 !== letra2 && lunes1 !== lunes2, `rotación: la semana siguiente le toca la otra (${letra1} ${lunes1} → ${letra2} ${lunes2})`);
+    const r2 = await rango();
+    await page.click('[data-semana="7"]');
+    await page.waitForFunction((r) => document.querySelector('.weeknav b').textContent !== r, r2);
+    await esperar();
+    ok((await filaSem().locator('.sem-rot').textContent()).trim() === letra1 && (await filaSem().locator('td').first().textContent()).trim() === lunes1, 'rotación: y a la siguiente vuelve a la primera');
+    await page.click('[data-semana="0"]');
+    await page.click('[data-mvista=fijo]');
+    await esperar();
+    await page.selectOption(`select[data-rota="${DANI}"]`, '1');
+    ok(await avisa('Ya no rota'), 'rotación: se puede quitar');
+    await esperar();
+    ok((await page.locator('table.malla tbody tr', { hasText: 'Daniela Castro' }).count()) === 1, 'rotación: sin rotación queda una sola semana');
+    await entrar('andrea.rojas@caminos.example');
+  }
+
   await ir('equipo');
   await page.click('[data-activar$="|desactivar"] >> nth=0');
   await page.click('[data-confirmar=si]');

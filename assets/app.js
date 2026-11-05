@@ -168,7 +168,7 @@
     usuario: null, perfil: null, sedes: [], areas: [], turnos: [], herramientas: [], personas: [], config: {}, revisores: [],
     view: 'inicio', menu: false, cargandoVista: false, errorVista: '',
     hoy: null,
-    malla: { lunes: '', sede: 'todas', vista: 'semana', filas: [], base: [], edit: null, guardando: false },
+    malla: { lunes: '', sede: 'todas', vista: 'semana', filas: [], base: [], rot: [], edit: null, guardando: false },
     turnoSede: null,
     asistencia: null, asisSede: 'todas',
     equipo: { claveNueva: null, filtro: '', confirmar: null, borrador: {} },
@@ -417,7 +417,7 @@
     S.tc = Object.assign(S.tc, { tarjetas: [], extractos: [], movs: [], regs: [], gastos: [], tarjeta: null, extracto: null, abierto: null, borrador: {}, confirmar: null, borrar: null, vivo: false, paso: 'gastos', mes: '', filtroG: 'todos', archivoRegistro: null, archivoUrl: null, urls: {} });
     Object.assign(S, {
       pantalla: 'login', error: '', recuperacion: false, olvido: { enviado: false, correo: '' }, usuario: null, perfil: null, view: 'inicio', menu: false, hoy: null, asistencia: null, lb: null,
-      malla: { lunes: '', sede: 'todas', vista: 'semana', filas: [], base: [], edit: null, guardando: false },
+      malla: { lunes: '', sede: 'todas', vista: 'semana', filas: [], base: [], rot: [], edit: null, guardando: false },
       com: { lista: [], imgs: [], lect: [], filtro: 'todos', q: '', borrador: { confirmar: true }, archivos: [], borrar: null },
       sol: { lista: [], adj: [], tipo: 'vacaciones', borrador: {}, archivos: [], cancelar: null, coment: {} },
       equipo: { claveNueva: null, filtro: '', confirmar: null, borrador: {} },
@@ -818,14 +818,26 @@
   async function cargarMalla() {
     const M = S.malla;
     if (!M.lunes) M.lunes = lunesDe(fechaEn(miTz()));
-    const [filas, base, turnos] = await Promise.all([
+    const [filas, base, turnos, rot] = await Promise.all([
       mallaEfectiva(M.lunes, sumarDias(M.lunes, 5)),
       todas(() => sb.from('horario_base').select('*').order('persona_id').order('dia')),
       q(sb.from('turnos').select('*').order('sede_id').order('id')),
+      q(sb.from('horario_rotacion').select('*')),
     ]);
     M.filas = filas;
     M.base = base;
+    M.rot = rot || [];
     S.turnos = turnos;
+  }
+
+  // Rotación por semanas: semana del ciclo (1 = A, 2 = B…) que le toca a una persona en una fecha
+  const LETRAS_SEMANA = ['A', 'B', 'C', 'D'];
+  const rotacionDe = (pid) => (S.malla.rot || []).find((r) => r.persona_id === pid) || null;
+  function semanaCiclo(pid, fecha) {
+    const r = rotacionDe(pid);
+    if (!r) return 1;
+    const sem = Math.floor(diasEntre(r.desde, fecha) / 7);
+    return ((sem % r.semanas) + r.semanas) % r.semanas + 1;
   }
 
   const inicioHorarios = () => ((S.config.inicio_horarios || {}).fecha || '9999-12-31');
@@ -834,7 +846,8 @@
     if (fecha < inicioHorarios()) return null;
     const filas = S.malla.base.filter((b) => b.persona_id === p.id);
     if (!filas.length) return null;
-    const f = filas.find((b) => b.dia === diaSemana(fecha));
+    const sem = semanaCiclo(p.id, fecha);
+    const f = filas.find((b) => b.dia === diaSemana(fecha) && (b.semana || 1) === sem);
     if (f) return f.turno_id;
     const d = turnoD(p.sede_id);
     return d ? d.id : null;
@@ -852,7 +865,7 @@
       .map((k) => ({ area: k, personas: grupos[k].sort((x, y) => x.nombre.localeCompare(y.nombre, 'es')) }));
   }
 
-  const personaTd = (p) => `<th scope="row" class="persona"><span class="avatar sm">${esc(initials(p.nombre))}</span><span><b>${esc(p.nombre)}</b>${variasSedes() ? `<small>${esc((sedeDe(p.sede_id) || {}).nombre || '')}</small>` : ''}</span></th>`;
+  const personaTd = (p, extra) => `<th scope="row" class="persona"><span class="avatar sm">${esc(initials(p.nombre))}</span><span><b>${esc(p.nombre)}</b>${variasSedes() ? `<small>${esc((sedeDe(p.sede_id) || {}).nombre || '')}</small>` : ''}${extra || ''}</span></th>`;
 
   // Una celda: chip (o botón para quien edita) o, abierta, un selector de turno.
   function celdaTurno(tipo, p, clave, turnoId, cambio, td) {
@@ -915,7 +928,7 @@
     const idx = {};
     M.filas.forEach((f) => { idx[f.persona_id + '|' + f.fecha] = f; });
     const usados = new Set();
-    const filas = porArea(personas).map((g) => `<tr class="grupo"><th colspan="7" scope="rowgroup">${esc(g.area)}</th></tr>` + g.personas.map((p) => `<tr>${personaTd(p)}${dias.map((d) => {
+    const filas = porArea(personas).map((g) => `<tr class="grupo"><th colspan="7" scope="rowgroup">${esc(g.area)}</th></tr>` + g.personas.map((p) => `<tr>${personaTd(p, rotacionDe(p.id) ? `<small class="sem-rot">${ico('recargar')}Semana ${LETRAS_SEMANA[semanaCiclo(p.id, M.lunes) - 1]}</small>` : '')}${dias.map((d) => {
       const f = idx[p.id + '|' + d];
       if (f) usados.add(f.turno_id);
       return celdaTurno('m', p, d, f && f.turno_id, f && f.cambio, d === hoy ? 'hoy' : '');
@@ -938,20 +951,35 @@
     const M = S.malla;
     const personas = activas().filter((p) => editaMalla(p.sede_id) && (M.sede === 'todas' || String(p.sede_id) === String(M.sede)));
     const idx = {};
-    M.base.forEach((b) => { idx[b.persona_id + '|' + b.dia] = b; });
+    M.base.forEach((b) => { idx[b.persona_id + '|' + (b.semana || 1) + '|' + b.dia] = b; });
     const usados = new Set();
-    const filas = porArea(personas).map((g) => `<tr class="grupo"><th colspan="7" scope="rowgroup">${esc(g.area)}</th></tr>` + g.personas.map((p) => `<tr>${personaTd(p)}${[1, 2, 3, 4, 5, 6].map((d) => {
-      const b = idx[p.id + '|' + d];
-      const tid = b ? b.turno_id : (turnoD(p.sede_id) || {}).id;
-      if (tid) usados.add(tid);
-      return celdaTurno('b', p, d, tid, false);
-    }).join('')}</tr>`).join('')).join('');
+    const hoy = fechaEn(miTz());
+    const filaSemana = (p, sem, r) => {
+      let extra = '';
+      if (sem === 1) {
+        const opciones = [[1, 'No rota'], [2, 'Rota cada semana (A y B)'], [3, 'Ciclo de 3 semanas'], [4, 'Ciclo de 4 semanas']];
+        extra = `<span class="rot-ctl"><select data-rota="${p.id}" aria-label="Rotación de ${esc(p.nombre)}"${M.guardando ? ' disabled' : ''}>${opciones.map(([n, t]) => `<option value="${n}"${(r ? r.semanas : 1) === n ? ' selected' : ''}>${t}</option>`).join('')}</select>
+          ${r ? `<label class="rot-desde"><span>Semana A desde el lunes</span><input type="date" value="${esc(r.desde)}" data-rotadesde="${p.id}" aria-label="Lunes de una semana A"></label><small>Esta semana le toca la <b>${LETRAS_SEMANA[semanaCiclo(p.id, hoy) - 1]}</b></small>` : ''}</span>`;
+      }
+      const etiqueta = r ? `<small class="sem-rot">${ico('recargar')}Semana ${LETRAS_SEMANA[sem - 1]}</small>` : '';
+      return `<tr class="${r && sem > 1 ? 'rot-sig' : ''}">${personaTd(p, etiqueta + extra)}${[1, 2, 3, 4, 5, 6].map((d) => {
+        const b = idx[p.id + '|' + sem + '|' + d];
+        const tid = b ? b.turno_id : (turnoD(p.sede_id) || {}).id;
+        if (tid) usados.add(tid);
+        return celdaTurno('b', p, sem + '-' + d, tid, false);
+      }).join('')}</tr>`;
+    };
+    const filas = porArea(personas).map((g) => `<tr class="grupo"><th colspan="7" scope="rowgroup">${esc(g.area)}</th></tr>` + g.personas.map((p) => {
+      const r = rotacionDe(p.id);
+      return Array.from({ length: r ? r.semanas : 1 }, (_, i) => filaSemana(p, i + 1, r)).join('');
+    }).join('')).join('');
     return `<div class="tablewrap card flush"><table class="malla">
         <thead><tr><th scope="col">Persona</th>${DIAS.map((d) => `<th scope="col">${d}</th>`).join('')}</tr></thead>
         <tbody>${filas || '<tr><td colspan="7" class="vacio">No hay personas cuya malla puedas editar.</td></tr>'}</tbody>
       </table></div>
       ${leyendaTurnos(usados)}
-      <p class="hint">Los días sin turno cuentan como Descanso. Las personas sin ningún día cargado (por ejemplo, la gerencia) no aparecen en la malla semanal.</p>`;
+      <p class="hint">Los días sin turno cuentan como Descanso. Las personas sin ningún día cargado (por ejemplo, la gerencia) no aparecen en la malla semanal.</p>
+      <p class="hint">Si alguien se turna por semanas, elige «Rota cada semana» en su nombre: aparecen sus semanas A y B, y la malla alterna sola desde el lunes que indiques como semana A.</p>`;
   }
 
   function turnosView() {
@@ -977,6 +1005,37 @@
       <p class="hint">Para un turno sin almuerzo (sábados), deja vacías las dos horas del almuerzo.</p>`;
   }
 
+  // Rotación: 1 = no rota; 2 a 4 = semanas del ciclo. Las semanas nuevas empiezan como copia de la A.
+  async function cambiarRotacion(pid, semanas, desde) {
+    const M = S.malla, r = rotacionDe(pid);
+    M.guardando = true;
+    render();
+    try {
+      if (semanas === 1) {
+        if (r) await q(sb.from('horario_rotacion').delete().eq('persona_id', pid));
+        await q(sb.from('horario_base').delete().eq('persona_id', pid).gt('semana', 1));
+      } else {
+        const inicio = lunesDe(desde || (r ? r.desde : fechaEn(miTz())));
+        await q(sb.from('horario_rotacion').upsert({ persona_id: pid, semanas, desde: inicio }, { onConflict: 'persona_id' }));
+        if (r && r.semanas > semanas) await q(sb.from('horario_base').delete().eq('persona_id', pid).gt('semana', semanas));
+        const semA = M.base.filter((b) => b.persona_id === pid && (b.semana || 1) === 1);
+        const nuevas = [];
+        for (let s = 2; s <= semanas; s++) {
+          if (M.base.some((b) => b.persona_id === pid && b.semana === s)) continue;
+          semA.forEach((b) => nuevas.push({ persona_id: pid, semana: s, dia: b.dia, turno_id: b.turno_id }));
+        }
+        if (nuevas.length) await q(sb.from('horario_base').insert(nuevas));
+      }
+      await cargarMalla();
+      toast(semanas === 1 ? 'Ya no rota: queda solo su horario fijo.' : desde ? 'Semana A actualizada.' : `Rotación de ${semanas} semanas. Ajusta su semana ${LETRAS_SEMANA.slice(1, semanas).join(' y ')}.`);
+    } catch (e) {
+      toast(errorTexto(e), 'bad');
+    } finally {
+      M.guardando = false;
+      render();
+    }
+  }
+
   async function guardarCelda(id, valor) {
     const [tipo, pid, clave] = id.split('|');
     const p = persona(pid);
@@ -990,11 +1049,12 @@
           await q(sb.from('malla').upsert({ persona_id: pid, fecha: clave, turno_id: +valor }, { onConflict: 'persona_id,fecha' }));
         }
       } else {
+        const [sem, dia] = String(clave).includes('-') ? clave.split('-').map(Number) : [1, +clave];
         const d = turnoD(p.sede_id);
         if (d && String(d.id) === String(valor)) {
-          await q(sb.from('horario_base').delete().eq('persona_id', pid).eq('dia', +clave));
+          await q(sb.from('horario_base').delete().eq('persona_id', pid).eq('semana', sem).eq('dia', dia));
         } else {
-          await q(sb.from('horario_base').upsert({ persona_id: pid, dia: +clave, turno_id: +valor }, { onConflict: 'persona_id,dia' }));
+          await q(sb.from('horario_base').upsert({ persona_id: pid, semana: sem, dia, turno_id: +valor }, { onConflict: 'persona_id,semana,dia' }));
         }
       }
       S.malla.edit = null;
@@ -3632,6 +3692,8 @@
     }
     if (d.celda) { if (el.value) await guardarCelda(d.celda, el.value); return; }
     if (d.msede) { S.malla.sede = el.value; render(); return; }
+    if (d.rota) { await cambiarRotacion(d.rota, +el.value); return; }
+    if (d.rotadesde) { if (el.value) { const r = rotacionDe(d.rotadesde); await cambiarRotacion(d.rotadesde, r ? r.semanas : 2, el.value); } return; }
     if (d.tsede) { S.turnoSede = +el.value; render(); return; }
     if (d.asede) { S.asisSede = el.value; render(); return; }
     if (d.inf) {

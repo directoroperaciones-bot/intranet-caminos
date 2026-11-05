@@ -14,3 +14,4 @@ correr supabase/pruebas/01_permisos.sql
 correr supabase/pruebas/02_aprobaciones.sql
 correr supabase/pruebas/03_grupos.sql
 correr supabase/pruebas/04_conciliacion.sql
+correr supabase/pruebas/05_rotacion.sql

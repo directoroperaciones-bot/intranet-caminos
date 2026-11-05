@@ -69,7 +69,7 @@
       { id: 6, sede_id: 1, codigo: 'D', nombre: 'Descanso', entrada: null, salida_almuerzo: null, regreso_almuerzo: null, salida: null, activo: true },
       { id: 7, sede_id: 1, codigo: 'V', nombre: 'Vacaciones', entrada: null, salida_almuerzo: null, regreso_almuerzo: null, salida: null, activo: true },
     ],
-    perfiles: [], configuracion: [], horario_base: [], malla: [], malla_historial: [], marcas: [],
+    perfiles: [], configuracion: [], horario_base: [], horario_rotacion: [], malla: [], malla_historial: [], marcas: [],
     herramientas: [
       { id: 1, nombre: 'Gestor de reservas', descripcion: 'La app de operación de Caminos: ventas, reservas, pasajeros y proveedores.', icono: 'reservas', pie: 'AppSheet', url: 'https://www.appsheet.com/start/eb769707-eafd-445c-aa00-eb637321ef76#appName=GESTORDERESERVAS-CAMINOS2-850658711&view=INICIO', orden: 1, areas_visibles: null, activo: true },
       { id: 2, nombre: 'Caminos Documentos', descripcion: 'Cotizaciones, confirmaciones, vouchers e itinerarios con el diseño de Caminos.', icono: 'documentos', pie: 'Claude', url: 'https://claude.ai/artifact/WPzKkP7MwdKBaGrrGVpZ1Y', orden: 2, areas_visibles: null, activo: true },
@@ -85,7 +85,7 @@
   const llavesEquipo = {};
   const SERIAL = ['sedes', 'areas', 'turnos', 'malla_historial', 'marcas', 'herramientas', 'comunicados', 'comunicado_imagenes', 'solicitudes', 'solicitud_adjuntos', 'grupos', 'equipos', 'tc_tarjetas', 'tc_categorias', 'tc_extractos', 'tc_registros', 'tc_movimientos'];
   const CLAVES = {
-    malla: ['persona_id', 'fecha'], horario_base: ['persona_id', 'dia'], comunicado_lecturas: ['comunicado_id', 'persona_id'],
+    malla: ['persona_id', 'fecha'], horario_base: ['persona_id', 'semana', 'dia'], horario_rotacion: ['persona_id'], comunicado_lecturas: ['comunicado_id', 'persona_id'],
     revisores: ['persona_id'], configuracion: ['clave'], perfiles: ['id'], turnos: ['sede_id', 'codigo'], marcas: ['persona_id', 'fecha', 'tipo'],
   };
   const sigId = {};
@@ -112,7 +112,7 @@
     id: g.id, nombre: g.nombre, correo: g.correo, area_id: g.area_id, sede_id: 1, rol: g.rol, es_admin: !!g.es_admin,
     activo: g.activo !== false, acepto_datos: g.primerIngreso ? null : sumarDias(HOY, -60) + 'T13:00:00Z', creado: sumarDias(HOY, -90) + 'T13:00:00Z',
   }));
-  GENTE.forEach((g) => (g.horario || []).forEach((t, i) => { if (t) db.horario_base.push({ persona_id: g.id, dia: i + 1, turno_id: t, actualizado: ahoraISO(), actualizado_por: ID.carolina }); }));
+  GENTE.forEach((g) => (g.horario || []).forEach((t, i) => { if (t) db.horario_base.push({ persona_id: g.id, semana: 1, dia: i + 1, turno_id: t, actualizado: ahoraISO(), actualizado_por: ID.carolina }); }));
 
   const INICIO = sumarDias(HOY, -60);
   db.configuracion = [
@@ -154,6 +154,13 @@
   const archivos = { 'comunicados/1/bienvenida.svg': 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svgBienvenida) };
 
   // ---------- Malla efectiva (misma lógica que la función SQL) ----------
+  // Semana del ciclo de rotación (1 = A); sin rotación, siempre 1
+  function semanaCiclo(pid, fecha) {
+    const r = db.horario_rotacion.find((x) => x.persona_id === pid);
+    if (!r) return 1;
+    const sem = Math.floor((Date.parse(fecha + 'T12:00:00Z') - Date.parse(r.desde + 'T12:00:00Z')) / (7 * 86400000));
+    return ((sem % r.semanas) + r.semanas) % r.semanas + 1;
+  }
   function mallaEfectiva(desde, hasta) {
     const inicio = (cfg('inicio_horarios') || {}).fecha || '9999-12-31';
     const out = db.malla.filter((m) => m.fecha >= desde && m.fecha <= hasta).map((m) => ({ persona_id: m.persona_id, fecha: m.fecha, turno_id: m.turno_id, cambio: true }));
@@ -163,7 +170,8 @@
       for (let f = desde; f <= hasta; f = sumarDias(f, 1)) {
         if (f < inicio) continue;
         if (db.malla.some((m) => m.persona_id === p.id && m.fecha === f)) continue;
-        const hb = db.horario_base.find((h) => h.persona_id === p.id && h.dia === isodow(f));
+        const sem = semanaCiclo(p.id, f);
+        const hb = db.horario_base.find((h) => h.persona_id === p.id && h.dia === isodow(f) && (h.semana || 1) === sem);
         const tid = hb ? hb.turno_id : d0 && d0.id;
         if (tid) out.push({ persona_id: p.id, fecha: f, turno_id: tid, cambio: false });
       }
@@ -349,6 +357,7 @@
     turnos: (r) => lideraSede(r.sede_id) || esSupervisor(),
     malla: (r) => lideraSede(sedeDePersona(r.persona_id)) || esSupervisor(),
     horario_base: (r) => lideraSede(sedeDePersona(r.persona_id)) || esSupervisor(),
+    horario_rotacion: (r) => lideraSede(sedeDePersona(r.persona_id)) || esSupervisor(),
     marcas: (r, op) => op !== 'insert' && lideraSede(sedeDePersona(r.persona_id)),
     comunicados: (r, op) => (op === 'insert' ? puedePublicar() && r.autor_id === uid() : r.autor_id === uid() || esGerencia()),
     comunicado_imagenes: (r) => autorOGerencia(r.comunicado_id),
@@ -371,7 +380,8 @@
     comunicado_imagenes: () => ({ orden: 0 }),
     turnos: () => ({ activo: true, entrada: null, salida_almuerzo: null, regreso_almuerzo: null, salida: null }),
     revisores: () => ({ sede_id: null, nivel: 'aprobar' }),
-    horario_base: () => ({}),
+    horario_base: () => ({ semana: 1 }),
+    horario_rotacion: () => ({ actualizado: ahoraISO(), actualizado_por: uid() }),
     configuracion: () => ({ actualizado: ahoraISO() }),
     tc_tarjetas: () => ({ banco: '', franquicia: '', titular: '', cupo: null, activa: true, creado: ahoraISO() }),
     tc_extractos: () => ({ saldo_anterior: 0, saldo_nuevo: null, pago_minimo: null, fecha_pago: null, estado: 'abierto', cerrado_por: null, cerrado_en: null, notas: '', creado: ahoraISO(), creado_por: uid() }),
@@ -381,6 +391,8 @@
   };
   const tcAbierto = (id) => db.tc_extractos.some((e) => e.id === id && e.estado === 'abierto');
   function revisarRestricciones(tabla, r) {
+    if (tabla === 'horario_base' && !(r.semana >= 1 && r.semana <= 4)) return err('new row for relation "horario_base" violates check constraint "horario_base_semana_check"', '23514');
+    if (tabla === 'horario_rotacion' && (!(r.semanas >= 2 && r.semanas <= 4) || !r.desde || isodow(r.desde) !== 1)) return err('new row for relation "horario_rotacion" violates check constraint', '23514');
     if (tabla === 'tc_movimientos') {
       if (!tcAbierto(r.extracto_id)) return err('Esta conciliación está cerrada. Reábrela para hacer cambios.');
       if (!String(r.descripcion || '').trim() || !Number(r.valor)) return err('new row for relation "tc_movimientos" violates check constraint', '23514');
