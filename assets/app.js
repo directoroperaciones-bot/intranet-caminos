@@ -178,6 +178,7 @@
     lb: null,
     sol: { lista: [], adj: [], tipo: 'vacaciones', borrador: {}, archivos: [], cancelar: null, coment: {} },
     grupos: { lista: [], vista: 'tablero', parroquia: '', mes: '', abierto: null, borrador: {}, borrar: null, clave: null },
+    ges: { filas: [], estado: null, mes: '', f: {}, medida: 'valor', detalle: false, orden: { col: 'fecha', asc: false }, clave: null, vivo: false, cargado: null },
   };
 
   // ---------- Permisos de interfaz (solo muestran u ocultan) ----------
@@ -416,6 +417,8 @@
   }
   function reiniciar() {
     soltarTarjeta();
+    soltarGestion();
+    S.ges = { filas: [], estado: null, mes: '', f: {}, medida: 'valor', detalle: false, orden: { col: 'fecha', asc: false }, clave: null, vivo: false, cargado: null };
     S.tc = Object.assign(S.tc, { tarjetas: [], extractos: [], movs: [], regs: [], gastos: [], tarjeta: null, extracto: null, abierto: null, borrador: {}, confirmar: null, borrar: null, vivo: false, paso: 'gastos', mes: '', filtroG: 'todos', archivoRegistro: null, archivoUrl: null, urls: {} });
     Object.assign(S, {
       pantalla: 'login', error: '', recuperacion: false, olvido: { enviado: false, correo: '' }, usuario: null, perfil: null, view: 'inicio', menu: false, hoy: null, asistencia: null, lb: null,
@@ -552,6 +555,7 @@
     { id: 'comunicados', nombre: 'Comunicados', ver: () => true, badge: () => sinConfirmar().length },
     { id: 'asistencia', nombre: 'Asistencia', ver: () => esLider() },
     { id: 'informes', nombre: 'Informes', ver: () => esLider() },
+    { id: 'gestion', nombre: 'Gestión', ver: () => esGerencia() },
     { id: 'solicitudes', nombre: 'Solicitudes', ver: () => verSolicitudes(), badge: () => porRevisar().length },
     { id: 'equipo', nombre: 'Equipo', ver: () => gestionaCuentas() },
     { id: 'tarjeta', nombre: 'Tarjeta', ver: () => esGerencia() },
@@ -600,6 +604,7 @@
       case 'comunicados': return comunicadosView();
       case 'asistencia': return asistenciaView();
       case 'informes': return informesView();
+      case 'gestion': return gestionView();
       case 'solicitudes': return solicitudesView();
       case 'equipo': return equipoView();
       case 'tarjeta': return tarjetaView();
@@ -1768,6 +1773,515 @@
     toast('Archivo descargado. Ábrelo con Excel.');
   }
 
+  // ---------- Informes de gestión (ventas del gestor de reservas) ----------
+  // Las ventas llegan resumidas desde la hoja de AppSheet (informes/Codigo.gs).
+  // Todo el tablero sale de las mismas filas filtradas: cambiar un filtro, o
+  // tocar una barra, una columna o un estado, cambia todas las gráficas.
+  // Cada gráfica ignora su propio filtro para seguir mostrando las demás
+  // opciones (la elegida queda resaltada), como en Power BI.
+  const GES_ESTADOS = [
+    { id: 'Cotizado', color: '#2A78D6' },
+    { id: 'Confirmada', color: '#1BAF7A' },
+    { id: 'Facturado', color: '#6250D6' },
+    { id: 'Cancelada', color: '#EB6834' },
+  ];
+  const GES_EFECTIVAS = ['Confirmada', 'Facturado'];
+  const GES_VIAJE = { Nacional: '#2A78D6', Internacional: '#EDA100' };
+  const GES_DIM = { asesora: 'Asesora', estado: 'Estado', tipo_venta: 'Tipo de venta', tipo_viaje: 'Tipo de viaje', destino: 'Destino', plan: 'Plan', seguimiento: 'Seguimiento' };
+  const GES_MEDIDAS = { valor: 'Valor', cantidad: 'Ventas', utilidad: 'Utilidad' };
+  const SIN_DATO = 'Sin dato';
+  const gesEfectiva = (r) => GES_EFECTIVAS.includes(r.estado);
+  const gesMes = (r) => r.fecha.slice(0, 7);
+  const gesVal = (r, k) => r[k] || SIN_DATO;
+  const colorEstado = (e) => (GES_ESTADOS.find((x) => x.id === e) || { color: '#8A8F9C' }).color;
+  const mesSig = (m) => { let [y, n] = m.split('-').map(Number); n++; if (n > 12) { n = 1; y++; } return `${y}-${String(n).padStart(2, '0')}`; };
+  const mesAnt = (m) => { let [y, n] = m.split('-').map(Number); n--; if (n < 1) { n = 12; y--; } return `${y}-${String(n).padStart(2, '0')}`; };
+  const mesCorto = (m) => { const t = MESES[+m.slice(5, 7) - 1]; return t.charAt(0).toUpperCase() + t.slice(1, 3); };
+  const mesLargo = (m) => { const t = nombreMes(m); return t.charAt(0).toUpperCase() + t.slice(1); };
+  const num1 = (x) => x.toLocaleString('es-CO', { maximumFractionDigits: x >= 100 ? 0 : 1 });
+  function plataCorta(v) {
+    const a = Math.abs(v), s = v < 0 ? '−' : '';
+    if (a >= 1e9) return `${s}$${num1(a / 1e9)} mil M`;
+    if (a >= 1e6) return `${s}$${num1(a / 1e6)} M`;
+    if (a >= 1e4) return `${s}$${Math.round(a / 1e3).toLocaleString('es-CO')} mil`;
+    return s + plata(a);
+  }
+  const pctTxt = (x, dec) => (x == null || !isFinite(x) ? '—' : `${(x * 100).toLocaleString('es-CO', { maximumFractionDigits: dec == null ? 1 : dec })} %`);
+  const gesMed = (lista) => {
+    const m = S.ges.medida;
+    if (m === 'cantidad') return lista.length;
+    if (m === 'utilidad') return lista.reduce((s, r) => s + (gesEfectiva(r) ? r.valor - r.costo : 0), 0);
+    return lista.reduce((s, r) => s + r.valor, 0);
+  };
+  const gesFmt = (v) => (S.ges.medida === 'cantidad' ? v.toLocaleString('es-CO') : plataCorta(v));
+  const gesNombreMedida = () => ({ valor: 'valor vendido', cantidad: 'número de ventas', utilidad: 'utilidad realizada' })[S.ges.medida];
+
+  async function cargarGestion() {
+    const [filas, estado] = await Promise.all([
+      q(sb.from('ventas_informe').select('*').order('fecha', { ascending: true })),
+      q(sb.from('ventas_estado').select('*')),
+    ]);
+    S.ges.filas = (filas || []).map((f) => Object.assign({}, f, {
+      valor: +f.valor || 0, costo: +f.costo || 0, cobrado: +f.cobrado || 0, pagado_prov: +f.pagado_prov || 0, pasajeros: +f.pasajeros || 0,
+      servicios: Array.isArray(f.servicios) ? f.servicios : [], proveedores: Array.isArray(f.proveedores) ? f.proveedores : [],
+    }));
+    S.ges.estado = (estado || [])[0] || null;
+    S.ges.cargado = new Date();
+    if (S.ges.mes && !gesMeses().includes(S.ges.mes)) S.ges.mes = '';
+    suscribirGestion();
+  }
+
+  // Tiempo real: cuando el script termina una sincronización, la pantalla se recarga sola
+  let canalGes = null, gesEspera = null;
+  function suscribirGestion() {
+    if (canalGes || !sb.channel) return;
+    canalGes = sb.channel('informes-gestion');
+    canalGes.on('postgres_changes', { event: '*', schema: 'public', table: 'ventas_estado' }, () => {
+      clearTimeout(gesEspera);
+      gesEspera = setTimeout(recargarGestion, 600);
+    });
+    canalGes.subscribe((estado) => {
+      S.ges.vivo = estado === 'SUBSCRIBED';
+      const v = document.getElementById('ges-vivo');
+      if (v) v.outerHTML = vivoGes();
+    });
+  }
+  function soltarGestion() {
+    if (canalGes && sb && sb.removeChannel) sb.removeChannel(canalGes);
+    canalGes = null;
+    clearTimeout(gesEspera);
+  }
+  async function recargarGestion() {
+    if (S.view !== 'gestion' || S.cargandoVista) return;
+    if (S.ocupado) { gesEspera = setTimeout(recargarGestion, 500); return; }
+    try { await cargarGestion(); } catch (e) { return; }
+    if (S.view === 'gestion') render();
+  }
+  function haceTxt(ts) {
+    const min = Math.max(0, Math.round((Date.now() - new Date(ts).getTime()) / 60000));
+    if (min < 1) return 'hace un momento';
+    if (min < 60) return `hace ${plural(min, 'minuto', 'minutos')}`;
+    const h = Math.round(min / 60);
+    if (h < 48) return `hace ${plural(h, 'hora', 'horas')}`;
+    return `hace ${plural(Math.round(h / 24), 'día', 'días')}`;
+  }
+  const gesViejo = () => { const e = S.ges.estado; return !!(e && e.sincronizado && Date.now() - new Date(e.sincronizado).getTime() > 3 * 3600000); };
+  function vivoGes() {
+    const e = S.ges.estado, sinc = e && e.sincronizado;
+    const txt = sinc ? `Gestor de reservas · ${haceTxt(sinc)}` : 'Aún sin sincronizar';
+    const t = sinc ? `Última sincronización: ${fechaHora(sinc, miTz())}. El gestor de reservas se lee cada 10 minutos.` : 'El script del gestor de reservas aún no ha mandado datos.';
+    return `<span id="ges-vivo" class="vivo${S.ges.vivo && !gesViejo() ? ' on' : ''}" title="${esc(t)}">${esc(txt)}</span>`;
+  }
+  setInterval(() => { const v = document.getElementById('ges-vivo'); if (v) v.outerHTML = vivoGes(); }, 30000);
+
+  // ---------- Cálculos ----------
+  // Filas que pasan todos los filtros menos «excepto» (la dimensión de la gráfica que las pide)
+  function gesFiltrar(excepto) {
+    const G = S.ges, F = G.f;
+    return G.filas.filter((r) => (excepto === 'mes' || !G.mes || gesMes(r) === G.mes)
+      && Object.keys(F).every((k) => k === excepto || !F[k] || gesVal(r, k) === F[k]));
+  }
+  function gesMeses() {
+    const ms = S.ges.filas.map(gesMes).sort();
+    const out = [];
+    if (!ms.length) return out;
+    for (let m = ms[0]; m <= ms[ms.length - 1] && out.length < 120; m = mesSig(m)) out.push(m);
+    return out;
+  }
+  function gesKpi(rows) {
+    const k = { n: rows.length, valor: 0, nEf: 0, valorEf: 0, util: 0, costoEf: 0, cobrado: 0, pax: 0, nCanc: 0, valorCanc: 0, nCot: 0, pagadoProv: 0 };
+    rows.forEach((r) => {
+      k.valor += r.valor;
+      if (gesEfectiva(r)) { k.nEf++; k.valorEf += r.valor; k.util += r.valor - r.costo; k.costoEf += r.costo; k.cobrado += r.cobrado; k.pax += r.pasajeros; k.pagadoProv += r.pagado_prov; }
+      if (r.estado === 'Cancelada') { k.nCanc++; k.valorCanc += r.valor; }
+      if (r.estado === 'Cotizado') k.nCot++;
+    });
+    k.margen = k.valorEf ? k.util / k.valorEf : null;
+    k.conv = k.n ? k.nEf / k.n : null;
+    k.ticket = k.nEf ? k.valorEf / k.nEf : null;
+    k.porCobrar = Math.max(0, k.valorEf - k.cobrado);
+    k.porPagar = Math.max(0, k.costoEf - k.pagadoProv);
+    return k;
+  }
+  function gesAgrupar(rows, campo) {
+    const m = new Map();
+    rows.forEach((r) => {
+      const k = gesVal(r, campo);
+      if (!m.has(k)) m.set(k, { k, filas: [] });
+      m.get(k).filas.push(r);
+    });
+    return [...m.values()].map((g) => Object.assign(g, { v: gesMed(g.filas), kpi: gesKpi(g.filas) }));
+  }
+
+  // ---------- Piezas del tablero ----------
+  const gesTip = (lineas) => esc(lineas.filter((x) => x != null && x !== '').join('\n'));
+  const gesTarjeta = (titulo, sub, cuerpo, cls, extra) => `<section class="gcard${cls ? ' ' + cls : ''}"><header><div><h2>${titulo}</h2>${sub ? `<p>${sub}</p>` : ''}</div>${extra || ''}</header>${cuerpo}</section>`;
+  const gesVacio = (txt) => `<p class="gvacio">${esc(txt || 'Sin ventas con estos filtros.')}</p>`;
+
+  // Indicador: valor grande, comparación con el mes anterior y la tendencia de los meses
+  function gesIndicador(o) {
+    const G = S.ges, meses = gesMeses(), serie = meses.map((m) => o.de(gesKpi(gesFiltrar('mes').filter((r) => gesMes(r) === m))));
+    let delta = '';
+    if (G.mes && meses.indexOf(G.mes) > 0) {
+      const ant = serie[meses.indexOf(G.mes) - 1], act = serie[meses.indexOf(G.mes)];
+      if (ant != null && act != null) {
+        const d = o.puntos ? (act - ant) * 100 : ant ? (act - ant) / Math.abs(ant) * 100 : null;
+        if (d != null && isFinite(d)) {
+          const sube = d > 0.05, baja = d < -0.05;
+          delta = `<small class="gk-delta ${sube ? 'up' : baja ? 'down' : 'flat'}">${sube ? '▲' : baja ? '▼' : '='} ${Math.abs(d).toLocaleString('es-CO', { maximumFractionDigits: 1 })}${o.puntos ? ' pts' : ' %'} <span>vs ${mesCorto(mesAnt(G.mes)).toLowerCase()}</span></small>`;
+        }
+      }
+    }
+    let chispa = '';
+    const vals = serie.map((v) => v || 0);
+    if (vals.length > 1) {
+      const max = Math.max(...vals), min = Math.min(0, ...vals), w = 120, h = 30, rango = (max - min) || 1;
+      const pts = vals.map((v, i) => [i / (vals.length - 1) * w, h - 3 - ((v - min) / rango) * (h - 6)]);
+      const i = G.mes ? meses.indexOf(G.mes) : vals.length - 1;
+      chispa = `<div class="gk-chispa"><svg viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" aria-hidden="true">
+          <polyline points="${pts.map((p) => p.map((n) => n.toFixed(1)).join(',')).join(' ')}" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" vector-effect="non-scaling-stroke"/></svg>
+          ${i >= 0 ? `<i style="left:${(pts[i][0] / w * 100).toFixed(1)}%;top:${(pts[i][1] / h * 100).toFixed(1)}%"></i>` : ''}</div>`;
+    }
+    const tip = gesTip([o.titulo, ...meses.map((m, j) => `${mesLargo(m)}: ${serie[j] == null ? '—' : o.fmt(serie[j])}`)]);
+    return `<div class="gk${o.hero ? ' hero' : ''}" data-tip="${tip}"><span class="gk-t">${o.titulo}</span><b>${o.valor}</b><small class="gk-s">${o.sub}</small>${delta}${chispa}</div>`;
+  }
+
+  // Columnas apiladas por estado, una por mes (tocar una columna filtra ese mes)
+  function gesColumnas() {
+    const G = S.ges, rows = gesFiltrar('mes'), meses = gesMeses();
+    const estados = GES_ESTADOS.map((e) => e.id).concat([...new Set(rows.map((r) => r.estado))].filter((e) => !GES_ESTADOS.some((x) => x.id === e)));
+    const datos = meses.map((m) => {
+      const rs = rows.filter((r) => gesMes(r) === m);
+      const seg = estados.map((e) => ({ e, v: Math.max(0, gesMed(rs.filter((r) => r.estado === e))) })).filter((s) => s.v > 0);
+      return { m, seg, total: seg.reduce((s, x) => s + x.v, 0), n: rs.length };
+    });
+    const max = Math.max(...datos.map((d) => d.total), 0);
+    if (!max) return gesVacio();
+    const paso = pasoBonito(max / 4), tope = Math.ceil(max / paso) * paso;
+    const lineas = [];
+    for (let v = 0; v <= tope + 1e-9; v += paso) lineas.push(v);
+    const presentes = estados.filter((e) => datos.some((d) => d.seg.some((s) => s.e === e)));
+    return `<div class="gcol" role="group" aria-label="Ventas por mes">
+        <div class="gcol-ejes" aria-hidden="true">${lineas.map((v) => `<span style="bottom:${(v / tope * 100).toFixed(2)}%"><em>${gesFmt(v)}</em></span>`).join('')}</div>
+        <div class="gcol-plot">${datos.map((d) => {
+          const on = G.mes === d.m, off = G.mes && !on;
+          const tip = gesTip([mesLargo(d.m), `${plural(d.n, 'venta registrada', 'ventas registradas')}`, ...d.seg.map((s) => `${s.e}: ${gesFmt(s.v)}`), d.seg.length > 1 ? `Total: ${gesFmt(d.total)}` : '']);
+          return `<button type="button" class="gcol-m${off ? ' off' : ''}" data-gmesf="${d.m}" aria-pressed="${on}" data-tip="${tip}">
+              <span class="gcol-area"><span class="gcol-pila" style="height:${(d.total / tope * 100).toFixed(2)}%">${d.seg.map((s) => `<i style="flex-grow:${s.v};background:${colorEstado(s.e)}"></i>`).join('')}</span>
+              ${d.total ? `<em class="gcol-v" style="bottom:${(d.total / tope * 100).toFixed(2)}%">${gesFmt(d.total)}</em>` : ''}</span>
+              <span class="gcol-l">${mesCorto(d.m)}${meses.length > 12 || meses[0].slice(0, 4) !== meses[meses.length - 1].slice(0, 4) ? ` <small>${d.m.slice(2, 4)}</small>` : ''}</span>
+            </button>`;
+        }).join('')}</div>
+      </div>
+      <div class="gleyenda">${presentes.map((e) => `<button type="button" data-gfiltro="estado" data-gvalor="${esc(e)}" aria-pressed="${G.f.estado === e}"${G.f.estado && G.f.estado !== e ? ' class="off"' : ''}><i style="background:${colorEstado(e)}"></i>${esc(e)}</button>`).join('')}</div>`;
+  }
+  function pasoBonito(x) {
+    if (x <= 0) return 1;
+    const p = Math.pow(10, Math.floor(Math.log10(x))), f = x / p;
+    return (f <= 1 ? 1 : f <= 2 ? 2 : f <= 2.5 ? 2.5 : f <= 5 ? 5 : 10) * p;
+  }
+
+  // Dona de estados con la leyenda al lado (tocar un estado filtra)
+  function gesDona() {
+    const G = S.ges, rows = gesFiltrar('estado');
+    const grupos = gesAgrupar(rows, 'estado').map((g) => Object.assign(g, { v: Math.max(0, g.v) }));
+    const orden = (e) => { const i = GES_ESTADOS.findIndex((x) => x.id === e); return i < 0 ? 99 : i; };
+    grupos.sort((a, b) => orden(a.k) - orden(b.k));
+    const total = grupos.reduce((s, g) => s + g.v, 0);
+    if (!total) return gesVacio();
+    const R = 70, C = 2 * Math.PI * R, conDatos = grupos.filter((g) => g.v > 0), hueco = conDatos.length > 1 ? 2 : 0;
+    let ac = 0;
+    const arcos = conDatos.map((g) => {
+      const largo = g.v / total * C, on = G.f.estado === g.k, off = G.f.estado && !on;
+      const a = `<circle cx="90" cy="90" r="${R}" fill="none" stroke="${colorEstado(g.k)}" stroke-width="${on ? 26 : 22}" stroke-dasharray="${Math.max(0, largo - hueco).toFixed(2)} ${(C - largo + hueco).toFixed(2)}" stroke-dashoffset="${(-ac).toFixed(2)}" class="${off ? 'off' : ''}" data-gfiltro="estado" data-gvalor="${esc(g.k)}" data-tip="${gesTip([g.k, `${pctTxt(g.v / total)} del ${gesNombreMedida()}`, gesFmt(g.v), plural(g.filas.length, 'venta', 'ventas')])}"/>`;
+      ac += largo;
+      return a;
+    }).join('');
+    const sel = G.f.estado && grupos.find((g) => g.k === G.f.estado);
+    return `<div class="gdona">
+        <div class="gdona-g"><svg viewBox="0 0 180 180" role="img" aria-label="Ventas por estado"><g transform="rotate(-90 90 90)">${arcos}</g></svg>
+          <div class="gdona-c"><b>${gesFmt(sel ? sel.v : total)}</b><span>${esc(sel ? sel.k : { valor: 'valor total', cantidad: 'ventas', utilidad: 'utilidad' }[G.medida])}</span></div></div>
+        <ul class="gdona-l">${grupos.map((g) => {
+          const on = G.f.estado === g.k;
+          return `<li><button type="button" data-gfiltro="estado" data-gvalor="${esc(g.k)}" aria-pressed="${on}"${G.f.estado && !on ? ' class="off"' : ''}>
+              <i style="background:${colorEstado(g.k)}"></i><span>${esc(g.k)}</span><b>${pctTxt(g.v / total, 0)}</b><small>${gesFmt(g.v)} · ${g.filas.length}</small></button></li>`;
+        }).join('')}</ul>
+      </div>`;
+  }
+
+  // Barras horizontales de una dimensión (tocar una barra filtra)
+  function gesBarras(dim, o) {
+    o = o || {};
+    const G = S.ges, max = o.max || 8;
+    let grupos = gesAgrupar(o.filas || gesFiltrar(dim), dim).filter((g) => g.v !== 0 || G.medida === 'cantidad');
+    grupos.sort((a, b) => b.v - a.v || a.k.localeCompare(b.k));
+    if (G.f[dim] && !grupos.some((g) => g.k === G.f[dim])) grupos.unshift({ k: G.f[dim], v: 0, filas: [], kpi: gesKpi([]) });
+    if (grupos.length > max) {
+      const resto = grupos.slice(max - 1).filter((g) => g.k !== G.f[dim]);
+      const fijo = grupos.slice(0, max - 1).concat(grupos.slice(max - 1).filter((g) => g.k === G.f[dim]));
+      const filas = [].concat(...resto.map((g) => g.filas));
+      grupos = fijo.concat([{ k: `Otros (${resto.length})`, otros: true, v: resto.reduce((s, g) => s + g.v, 0), filas, kpi: gesKpi(filas) }]);
+    }
+    if (!grupos.length) return gesVacio();
+    const tope = Math.max(...grupos.map((g) => Math.abs(g.v)), 1);
+    return `<ul class="gbar">${grupos.map((g) => {
+      const on = G.f[dim] === g.k, off = G.f[dim] && !on;
+      const tip = gesTip([g.k, `${plural(g.filas.length, 'venta', 'ventas')} · ${g.kpi.nEf} efectivas`, `Valor: ${plata(g.kpi.valor)}`, `Utilidad realizada: ${plata(g.kpi.util)}`, g.kpi.conv != null ? `Conversión: ${pctTxt(g.kpi.conv)}` : '']);
+      const barra = `<span class="gbar-t"><i style="width:${(Math.max(0, g.v) / tope * 100).toFixed(1)}%;background:${o.color || 'var(--coral)'}"></i></span>`;
+      const cuerpo = `<span class="gbar-l">${esc(g.k)}</span>${barra}<b>${gesFmt(g.v)}</b>`;
+      return `<li${off ? ' class="off"' : ''}>${g.otros ? `<div class="gbar-r" data-tip="${tip}">${cuerpo}</div>` : `<button type="button" class="gbar-r" data-gfiltro="${dim}" data-gvalor="${esc(g.k)}" aria-pressed="${on}" data-tip="${tip}">${cuerpo}</button>`}</li>`;
+    }).join('')}</ul>`;
+  }
+
+  // Barra partida en dos o más partes, con su leyenda
+  function gesPartida(partes, total, dim) {
+    const G = S.ges;
+    if (!total) return gesVacio('Sin datos.');
+    return `<div class="gpart">${partes.filter((p) => p.v > 0).map((p) => `<i style="flex-grow:${p.v};background:${p.color}"${dim && G.f[dim] && G.f[dim] !== p.k ? ' class="off"' : ''} data-tip="${gesTip([p.k, p.fmt || plata(p.v), pctTxt(p.v / total)])}"></i>`).join('')}</div>
+      <ul class="gpart-l">${partes.map((p) => {
+        const dentro = `<i style="background:${p.color}"></i><span>${esc(p.k)}</span><b>${p.fmt || plataCorta(p.v)}</b><small>${pctTxt(p.v / total, 0)}</small>`;
+        return `<li>${dim ? `<button type="button" data-gfiltro="${dim}" data-gvalor="${esc(p.k)}" aria-pressed="${G.f[dim] === p.k}"${G.f[dim] && G.f[dim] !== p.k ? ' class="off"' : ''}>${dentro}</button>` : `<div>${dentro}</div>`}</li>`;
+      }).join('')}</ul>`;
+  }
+
+  // Desempeño por asesora
+  function gesAsesoras() {
+    const G = S.ges, grupos = gesAgrupar(gesFiltrar('asesora'), 'asesora').sort((a, b) => b.kpi.valorEf - a.kpi.valorEf || b.kpi.valor - a.kpi.valor);
+    if (!grupos.length) return gesVacio();
+    const tope = Math.max(...grupos.map((g) => g.kpi.valor), 1);
+    return `<div class="gases">${grupos.map((g) => {
+      const k = g.kpi, on = G.f.asesora === g.k, off = G.f.asesora && !on;
+      return `<button type="button" class="gases-r${off ? ' off' : ''}" data-gfiltro="asesora" data-gvalor="${esc(g.k)}" aria-pressed="${on}">
+          <span class="gases-who"><span class="gases-av">${esc(initials(g.k))}</span><span><b>${esc(g.k)}</b><small>${plural(k.n, 'venta', 'ventas')} · ${k.nEf} efectivas</small></span></span>
+          <span class="gases-bar" data-tip="${gesTip([g.k, `Registrado: ${plata(k.valor)}`, `Efectivo (confirmado y facturado): ${plata(k.valorEf)}`])}"><i class="tot" style="width:${(k.valor / tope * 100).toFixed(1)}%"></i><i class="ef" style="width:${(k.valorEf / tope * 100).toFixed(1)}%"></i></span>
+          <span class="gases-n"><small>Registrado</small><b>${plataCorta(k.valor)}</b></span>
+          <span class="gases-n"><small>Efectivo</small><b>${plataCorta(k.valorEf)}</b></span>
+          <span class="gases-n"><small>Utilidad</small><b>${plataCorta(k.util)}</b></span>
+          <span class="gases-n"><small>Conversión</small><b>${pctTxt(k.conv, 0)}</b></span>
+        </button>`;
+    }).join('')}</div>
+    <div class="gleyenda estatica"><span><i class="tot"></i>Registrado</span><span><i class="ef"></i>Efectivo (confirmado y facturado)</span></div>`;
+  }
+
+  // Servicios vendidos (de las ventas efectivas): valor y margen por tipo
+  function gesServicios(rows) {
+    const m = new Map();
+    rows.filter(gesEfectiva).forEach((r) => r.servicios.forEach((s) => {
+      const k = s.tipo || 'Otros', g = m.get(k) || { k, valor: 0, costo: 0 };
+      g.valor += +s.valor || 0; g.costo += +s.costo || 0;
+      m.set(k, g);
+    }));
+    const lista = [...m.values()].filter((g) => g.valor > 0).sort((a, b) => b.valor - a.valor);
+    if (!lista.length) return gesVacio('Sin servicios en ventas efectivas.');
+    const tope = lista[0].valor;
+    return `<ul class="gbar">${lista.map((g) => `<li><div class="gbar-r" data-tip="${gesTip([g.k, `Vendido: ${plata(g.valor)}`, `Costo: ${plata(g.costo)}`, `Utilidad: ${plata(g.valor - g.costo)}`, `Margen: ${pctTxt(g.valor ? (g.valor - g.costo) / g.valor : null)}`])}">
+        <span class="gbar-l">${esc(g.k)}</span><span class="gbar-t"><i style="width:${(g.valor / tope * 100).toFixed(1)}%;background:var(--carbon)"></i></span><b>${plataCorta(g.valor)}</b><small class="gbar-x">${pctTxt(g.valor ? (g.valor - g.costo) / g.valor : null, 0)}</small></div></li>`).join('')}</ul>
+      <p class="gnota">Barra: valor vendido · a la derecha, margen de cada servicio.</p>`;
+  }
+
+  // Proveedores con más compras (ventas efectivas)
+  function gesProveedores(rows) {
+    const m = new Map();
+    rows.filter(gesEfectiva).forEach((r) => r.proveedores.forEach((p) => m.set(p.nombre, (m.get(p.nombre) || 0) + (+p.costo || 0))));
+    const lista = [...m.entries()].filter(([, v]) => v > 0).sort((a, b) => b[1] - a[1]).slice(0, 6);
+    if (!lista.length) return gesVacio('Sin proveedores en ventas efectivas.');
+    const tope = lista[0][1];
+    return `<ul class="gbar">${lista.map(([k, v]) => `<li><div class="gbar-r" data-tip="${gesTip([k, `Compras: ${plata(v)}`])}"><span class="gbar-l">${esc(k)}</span><span class="gbar-t"><i style="width:${(v / tope * 100).toFixed(1)}%;background:var(--pizarra)"></i></span><b>${plataCorta(v)}</b></div></li>`).join('')}</ul>`;
+  }
+
+  // Motivos de pérdida y estado del seguimiento (ventas no cerradas)
+  function gesMotivos() {
+    const G = S.ges, rows = gesFiltrar('seguimiento').filter((r) => !gesEfectiva(r));
+    const con = rows.filter((r) => r.seguimiento);
+    const sinSeg = rows.filter((r) => !r.seguimiento && r.estado === 'Cotizado').length;
+    const m = new Map();
+    con.forEach((r) => m.set(r.seguimiento, (m.get(r.seguimiento) || 0) + 1));
+    const lista = [...m.entries()].sort((a, b) => b[1] - a[1]).slice(0, 7);
+    if (!lista.length) return gesVacio('Sin seguimientos registrados en las ventas no cerradas.');
+    const tope = lista[0][1];
+    return `<ul class="gbar">${lista.map(([k, v]) => {
+      const on = G.f.seguimiento === k, off = G.f.seguimiento && !on;
+      return `<li${off ? ' class="off"' : ''}><button type="button" class="gbar-r" data-gfiltro="seguimiento" data-gvalor="${esc(k)}" aria-pressed="${on}" data-tip="${gesTip([k, plural(v, 'venta', 'ventas')])}"><span class="gbar-l">${esc(k)}</span><span class="gbar-t"><i style="width:${(v / tope * 100).toFixed(1)}%;background:#EB6834"></i></span><b>${v}</b></button></li>`;
+    }).join('')}</ul>
+    ${sinSeg ? `<p class="gnota">${plural(sinSeg, 'cotización sin seguimiento registrado', 'cotizaciones sin seguimiento registrado')}.</p>` : ''}`;
+  }
+
+  // Próximas salidas de las ventas efectivas
+  function gesSalidas() {
+    const hoy = fechaEn(miTz());
+    const lista = gesFiltrar().filter((r) => gesEfectiva(r) && r.salida && r.salida >= hoy).sort((a, b) => a.salida.localeCompare(b.salida) || b.valor - a.valor);
+    if (!lista.length) return gesVacio('No hay salidas próximas en las ventas de este filtro.');
+    const dias = (f) => Math.round((new Date(f + 'T12:00:00Z') - new Date(hoy + 'T12:00:00Z')) / 86400000);
+    return `<ol class="gsal">${lista.slice(0, 8).map((r) => {
+      const d = dias(r.salida), saldo = Math.max(0, r.valor - r.cobrado), urge = saldo > 0 && d <= 15;
+      return `<li>
+          <span class="gsal-f"><b>${+r.salida.slice(8, 10)}</b><small>${mesCorto(r.salida.slice(0, 7))}</small></span>
+          <span class="gsal-d"><b>${esc(r.destino || SIN_DATO)}</b><small>${esc([r.plan, r.asesora, plural(r.pasajeros, 'pasajero', 'pasajeros')].filter(Boolean).join(' · '))}</small></span>
+          <span class="gsal-c">${d === 0 ? 'Hoy' : d === 1 ? 'Mañana' : `En ${d} días`}</span>
+          <span class="gsal-v"><b>${plataCorta(r.valor)}</b><small class="${urge ? 'bad' : saldo ? 'warn' : 'ok'}">${saldo ? `${urge ? ico('alerta') : ''}Saldo ${plataCorta(saldo)}` : `${ico('check')}Pagado`}</small></span>
+        </li>`;
+    }).join('')}</ol>${lista.length > 8 ? `<p class="gnota">Y ${plural(lista.length - 8, 'salida más', 'salidas más')} (ver el detalle).</p>` : ''}`;
+  }
+
+  // Detalle: la tabla de ventas filtradas (sin datos personales)
+  const GES_COLS = [
+    ['fecha', 'Fecha'], ['asesora', 'Asesora'], ['destino', 'Destino'], ['tipo_venta', 'Tipo'], ['estado', 'Estado'],
+    ['salida', 'Salida'], ['pasajeros', 'Pax'], ['valor', 'Valor'], ['utilidad', 'Utilidad'], ['cobrado', 'Cobrado'],
+  ];
+  function gesOrdenadas() {
+    const { col, asc } = S.ges.orden, v = (r) => (col === 'utilidad' ? r.valor - r.costo : r[col] == null ? '' : r[col]);
+    return gesFiltrar().slice().sort((a, b) => {
+      const x = v(a), y = v(b), c = typeof x === 'number' && typeof y === 'number' ? x - y : String(x).localeCompare(String(y));
+      return asc ? c : -c;
+    });
+  }
+  function gesDetalle() {
+    const G = S.ges, filas = gesOrdenadas();
+    if (!G.detalle) return '';
+    const num = ['pasajeros', 'valor', 'utilidad', 'cobrado'];
+    return `<div class="tabla-scroll"><table class="tabla gtabla"><thead><tr>${GES_COLS.map(([k, n]) => `<th${num.includes(k) ? ' class="num"' : ''}><button type="button" data-gorden="${k}">${n}${G.orden.col === k ? (G.orden.asc ? ' ↑' : ' ↓') : ''}</button></th>`).join('')}</tr></thead>
+      <tbody>${filas.slice(0, 500).map((r) => `<tr>
+        <td>${fechaCorta(r.fecha)}</td><td>${esc(r.asesora)}</td><td>${esc(r.destino)}${r.plan ? `<small>${esc(r.plan)}</small>` : ''}</td><td>${esc(r.tipo_venta)}</td>
+        <td><span class="gest"><i style="background:${colorEstado(r.estado)}"></i>${esc(r.estado)}</span></td><td>${r.salida ? fechaCorta(r.salida) : '—'}</td>
+        <td class="num">${r.pasajeros}</td><td class="num">${plata(r.valor)}</td><td class="num">${gesEfectiva(r) ? plata(r.valor - r.costo) : '—'}</td><td class="num">${plata(r.cobrado)}</td></tr>`).join('')}</tbody></table></div>
+      ${filas.length > 500 ? `<p class="gnota">Se muestran 500 de ${filas.length}. «Exportar a Excel» baja todas.</p>` : ''}`;
+  }
+  function exportarGestion() {
+    if (CFG.sinDescargas) { toast('En esta vista previa no se descargan archivos. En la intranet publicada, este botón baja el CSV para Excel.', 'warn'); return; }
+    const celda = (v) => { let s = String(v == null ? '' : v); if (typeof v === 'string' && /^[=+\-@]/.test(s)) s = "'" + s; return /[;"\r\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; };
+    const n = (x) => String(Math.round(x));
+    const cab = ['ID venta', 'Fecha registro', 'Asesora', 'Estado', 'Tipo de venta', 'Tipo de viaje', 'Destino', 'Plan', 'Salida', 'Regreso', 'Pasajeros', 'Valor', 'Costo proveedores', 'Utilidad', 'Cobrado', 'Saldo por cobrar', 'Pagado a proveedores', 'Seguimiento'];
+    const lineas = [cab.join(';')].concat(gesOrdenadas().map((r) => [
+      r.id, r.fecha, r.asesora, r.estado, r.tipo_venta, r.tipo_viaje, r.destino, r.plan, r.salida || '', r.regreso || '', r.pasajeros,
+      n(r.valor), n(r.costo), n(r.valor - r.costo), n(r.cobrado), n(gesEfectiva(r) ? Math.max(0, r.valor - r.cobrado) : 0), n(r.pagado_prov), r.seguimiento,
+    ].map(celda).join(';')));
+    const blob = new Blob(['﻿' + lineas.join('\r\n') + '\r\n'], { type: 'text/csv;charset=utf-8' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `ventas-${S.ges.mes || 'todo'}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
+    toast('Archivo descargado. Ábrelo con Excel.');
+  }
+
+  // Conexión con el gestor de reservas (solo administración)
+  function gesConexion() {
+    const G = S.ges, e = G.estado || {};
+    if (!esAdmin()) return '';
+    const clave = G.clave ? `<div class="clave" aria-live="polite">
+        <p class="hint">Pégala en el script de Google como propiedad <b>CLAVE_VENTAS</b> (paso 3 de <b>informes/LEEME.md</b>). Se muestra <b>una sola vez</b>; la clave anterior dejó de servir.</p>
+        <dl><div><dt>Clave</dt><dd class="mono">${esc(G.clave)}</dd></div></dl>
+        <div class="acc"><button type="button" class="btn" data-copiar="ventas">${ico('copiar')}Copiar</button><button type="button" class="btn ghost" data-accion="gesClaveCerrar">Listo</button></div>
+      </div>` : '';
+    return `<section class="gcard gcon"><header><div><h2>Conexión con el gestor de reservas</h2>
+        <p>Un script de Google <b>solo lee</b> la hoja de AppSheet cada 10 minutos y manda aquí un resumen por venta, sin datos de clientes ni pasajeros. Nunca modifica la hoja.</p></div></header>
+        <dl class="gcon-d">
+          <div><dt>Última sincronización</dt><dd>${e.sincronizado ? `${esc(fechaHora(e.sincronizado, miTz()))} · ${esc(haceTxt(e.sincronizado))}` : 'Nunca'}</dd></div>
+          <div><dt>Ventas recibidas</dt><dd>${(e.filas || 0).toLocaleString('es-CO')}</dd></div>
+          <div><dt>Clave del script</dt><dd>${e.clave_creada ? `Creada el ${esc(fechaHora(e.clave_creada, miTz()))}` : 'Sin crear'}</dd></div>
+        </dl>
+        ${clave || `<div class="acc"><button type="button" class="btn ghost sm" data-accion="gesClave"${ocupado('gesClave')}>${ico('llave')}${e.clave_creada ? 'Cambiar la clave del script' : 'Crear la clave del script'}</button></div>`}
+      </section>`;
+  }
+
+  function gestionView() {
+    const G = S.ges, meses = gesMeses();
+    const cab = encabezado('Panel de gerencia', 'Informes de <em>gestión</em>',
+      `Ventas del gestor de reservas${G.mes ? ` registradas en <b>${esc(nombreMes(G.mes))}</b>` : ', todos los meses'}. Toca cualquier barra, columna o estado para filtrar todo el tablero.`,
+      `<div class="ges-h">${vivoGes()}<button type="button" class="btn ghost sm" data-accion="gesRecargar"${ocupado('gesRecargar')}>${ico('recargar')}Actualizar</button></div>`);
+    if (!G.filas.length) {
+      return `${cab}<div class="notice">${ico('grafica')}<div><b>Aún no llegan ventas del gestor de reservas.</b><p>${esAdmin() ? 'Crea la clave del script abajo y sigue los pasos de <b>informes/LEEME.md</b>. En cuanto el script corra, el tablero se llena solo.' : 'La administración debe conectar el script del gestor de reservas.'}</p></div></div>${gesConexion()}`;
+    }
+    // Filtros (todos sincronizados)
+    const opciones = (dim) => [...new Set(gesFiltrar(dim).map((r) => gesVal(r, dim)).concat(G.f[dim] ? [G.f[dim]] : []))].sort((a, b) => a.localeCompare(b));
+    const sel = (dim) => `<label class="gsel"><span>${GES_DIM[dim]}</span><select data-gsel="${dim}"><option value="">Todos</option>${opciones(dim).map((o) => `<option value="${esc(o)}"${G.f[dim] === o ? ' selected' : ''}>${esc(o)}</option>`).join('')}</select></label>`;
+    const chips = Object.keys(G.f).filter((k) => G.f[k]).map((k) => `<button type="button" class="gchip" data-gquitar="${k}" aria-label="Quitar filtro ${esc(GES_DIM[k])}">${esc(GES_DIM[k])}: <b>${esc(G.f[k])}</b>${ico('x')}</button>`);
+    if (G.mes) chips.unshift(`<button type="button" class="gchip" data-gmesf="" aria-label="Quitar filtro de mes">Mes: <b>${esc(mesLargo(G.mes))}</b>${ico('x')}</button>`);
+    const variosAnios = meses.length && meses[0].slice(0, 4) !== meses[meses.length - 1].slice(0, 4);
+    const barra = `<div class="gfiltros">
+        <div class="gmeses" role="group" aria-label="Mes">
+          <button type="button" data-gmesf="" aria-pressed="${!G.mes}">Todo</button>
+          ${meses.map((m) => `<button type="button" data-gmesf="${m}" aria-pressed="${G.mes === m}">${mesCorto(m)}${variosAnios ? ` ${m.slice(2, 4)}` : ''}</button>`).join('')}
+        </div>
+        <div class="gsels">${sel('asesora')}${sel('estado')}${sel('tipo_venta')}${sel('tipo_viaje')}
+          <div class="gsel"><span>Medir por</span><div class="seg" role="group" aria-label="Medida">${Object.keys(GES_MEDIDAS).map((m) => `<button type="button" data-gmedida="${m}" aria-pressed="${G.medida === m}">${GES_MEDIDAS[m]}</button>`).join('')}</div></div>
+        </div>
+      </div>
+      ${chips.length ? `<div class="gchips" aria-label="Filtros activos"><span class="gchips-t">${ico('grafica')}Viendo</span>${chips.join('')}<button type="button" class="btn txt sm" data-accion="gesLimpiar">Quitar filtros</button></div>` : ''}`;
+
+    const rows = gesFiltrar(), k = gesKpi(rows);
+    const aviso = gesViejo() ? `<div class="notice warn">${ico('alerta')}<span>La última sincronización con el gestor de reservas fue ${esc(haceTxt(G.estado.sincronizado))}. Los datos pueden estar desactualizados: revisa el script de Google.</span></div>` : '';
+    const indicadores = `<div class="gkpis">
+        ${gesIndicador({ titulo: 'Ventas registradas', hero: true, valor: plataCorta(k.valor), sub: `${plata(k.valor)} · ${plural(k.n, 'venta', 'ventas')}`, de: (x) => x.valor, fmt: plata })}
+        ${gesIndicador({ titulo: 'Ventas efectivas', valor: plataCorta(k.valorEf), sub: `${plural(k.nEf, 'confirmada o facturada', 'confirmadas o facturadas')}`, de: (x) => x.valorEf, fmt: plata })}
+        ${gesIndicador({ titulo: 'Utilidad realizada', valor: plataCorta(k.util), sub: `Margen ${pctTxt(k.margen)}`, de: (x) => x.util, fmt: plata })}
+        ${gesIndicador({ titulo: 'Conversión', valor: pctTxt(k.conv), sub: `${k.nEf} de ${plural(k.n, 'venta', 'ventas')} se concretaron`, de: (x) => x.conv, fmt: (v) => pctTxt(v), puntos: true })}
+        ${gesIndicador({ titulo: 'Ticket promedio', valor: k.ticket == null ? '—' : plataCorta(k.ticket), sub: 'Por venta efectiva', de: (x) => x.ticket, fmt: plata })}
+        ${gesIndicador({ titulo: 'Pasajeros', valor: k.pax.toLocaleString('es-CO'), sub: 'En ventas efectivas', de: (x) => x.pax, fmt: (v) => String(v) })}
+      </div>`;
+
+    const filasViaje = gesFiltrar('tipo_viaje');
+    const viajes = gesAgrupar(filasViaje, 'tipo_viaje').map((g) => ({ k: g.k, v: Math.max(0, g.v), color: GES_VIAJE[g.k] || '#8A8F9C', fmt: gesFmt(Math.max(0, g.v)) })).sort((a, b) => b.v - a.v);
+    const cartera = gesPartida([
+      { k: 'Cobrado', v: k.cobrado, color: 'var(--carbon)' },
+      { k: 'Por cobrar', v: k.porCobrar, color: 'var(--amarillo)' },
+    ], k.cobrado + k.porCobrar);
+    const prov = gesPartida([
+      { k: 'Pagado a proveedores', v: k.pagadoProv, color: 'var(--pizarra)' },
+      { k: 'Por pagar', v: k.porPagar, color: 'var(--hairline-2)' },
+    ], k.pagadoProv + k.porPagar);
+
+    const medida = GES_MEDIDAS[G.medida].toLowerCase();
+    return `${cab}${aviso}<div class="gestion">${barra}${indicadores}
+        <div class="gfila g-2-1">
+          ${gesTarjeta('Evolución mensual', `${GES_MEDIDAS[G.medida]} por mes y estado · toca un mes para ver solo ese mes`, gesColumnas())}
+          ${gesTarjeta('Estados', `Participación en el ${gesNombreMedida()}`, gesDona())}
+        </div>
+        <div class="gfila g-2-1">
+          ${gesTarjeta('Desempeño por asesora', 'Valor registrado frente a lo efectivamente vendido', gesAsesoras())}
+          ${gesTarjeta('Cartera y proveedores', 'Ventas efectivas: cobro a clientes y pago a proveedores', `
+              <div class="gsub"><h3>Clientes <small>${plataCorta(k.valorEf)}</small></h3>${cartera}</div>
+              <div class="gsub"><h3>Proveedores <small>${plataCorta(k.costoEf)}</small></h3>${prov}</div>`)}
+        </div>
+        <div class="gfila g-3">
+          ${gesTarjeta('Tipo de venta', `Por ${medida}`, gesBarras('tipo_venta'))}
+          ${gesTarjeta('Destinos principales', `Por ${medida}`, gesBarras('destino', { max: 8 }))}
+          ${gesTarjeta('Nacional e internacional', `Por ${medida}`, gesPartida(viajes, viajes.reduce((s, x) => s + x.v, 0), 'tipo_viaje') + `<div class="gsub"><h3>Planes y peregrinaciones</h3>${gesBarras('plan', { max: 5, color: 'var(--carbon)', filas: gesFiltrar('plan').filter((r) => r.plan) })}</div>`)}
+        </div>
+        <div class="gfila g-3">
+          ${gesTarjeta('Servicios vendidos', 'Ventas efectivas, por tipo de servicio', gesServicios(rows))}
+          ${gesTarjeta('Proveedores principales', 'Compras en ventas efectivas', gesProveedores(rows))}
+          ${gesTarjeta('Ventas no cerradas: seguimiento', `${plural(k.nCanc, 'cancelada', 'canceladas')} · ${plural(k.nCot, 'en cotización', 'en cotización')}`, gesMotivos())}
+        </div>
+        <div class="gfila">
+          ${gesTarjeta('Próximas salidas', 'Ventas efectivas con fecha de viaje desde hoy, con su saldo por cobrar', gesSalidas())}
+        </div>
+        ${gesTarjeta('Detalle de ventas', `${plural(rows.length, 'venta', 'ventas')} con los filtros actuales`, gesDetalle(), 'gdet',
+          `<div class="acc"><button type="button" class="btn ghost sm" data-accion="gesDetalle">${ico('hoja')}${G.detalle ? 'Ocultar detalle' : 'Ver detalle'}</button><button type="button" class="btn ghost sm" data-accion="gesExportar">${ico('descargar')}Exportar a Excel</button></div>`)}
+        ${gesConexion()}
+      </div>
+      <div id="gtip" class="gtip" role="tooltip" hidden></div>`;
+  }
+
+  // Tooltip de las gráficas de gestión
+  document.addEventListener('mousemove', (ev) => {
+    const tip = document.getElementById('gtip');
+    if (!tip) return;
+    const el = ev.target.closest && ev.target.closest('[data-tip]');
+    if (!el || !el.closest('.gestion')) { tip.hidden = true; return; }
+    const lineas = el.getAttribute('data-tip').split('\n');
+    const html = `<b>${esc(lineas[0])}</b>${lineas.slice(1).map((l) => `<span>${esc(l)}</span>`).join('')}`;
+    if (tip.innerHTML !== html) tip.innerHTML = html;
+    tip.hidden = false;
+    const w = tip.offsetWidth, h = tip.offsetHeight;
+    let x = ev.clientX + 14, y = ev.clientY - h - 12;
+    if (x + w > window.innerWidth - 8) x = ev.clientX - w - 14;
+    if (y < 8) y = ev.clientY + 18;
+    tip.style.left = Math.max(8, x) + 'px';
+    tip.style.top = y + 'px';
+  });
+
   // ---------- Equipo (cuentas) ----------
   // Contraseña temporal de 10 caracteres, sin caracteres confusos (0, O, 1, l, I)
   function claveTemporal() {
@@ -2822,6 +3336,12 @@
           <li><b>Comunicados:</b> avisos internos. Si piden confirmación, léelos y toca «Confirmar lectura». En Inicio aparece una franja si tienes alguno pendiente.</li>
           <li><b>Herramientas:</b> las tarjetas de Inicio abren el Gestor de reservas, Caminos Documentos y el Cotizador en una pestaña nueva.</li>
         </ul>` },
+      { id: 'gestion', titulo: 'Informes de gestión (ventas)', ver: esGerencia(), html: `<p>La pestaña «Gestión» muestra las ventas del gestor de reservas de AppSheet. Se actualiza sola cada 10 minutos y la hoja nunca se modifica desde la intranet.</p>
+          <ul><li><b>Filtros:</b> elige un mes arriba, o una asesora, un estado o un tipo de venta. Todo el tablero cambia a la vez.</li>
+          <li><b>Tocar para filtrar:</b> una columna del mes, un estado de la dona, una barra o una asesora también filtran todo. Tocar de nuevo quita el filtro. Los filtros activos quedan arriba, con «Quitar filtros».</li>
+          <li><b>Medir por:</b> valor, número de ventas o utilidad.</li>
+          <li><b>Ventas efectivas</b> son las confirmadas y facturadas. La <b>utilidad realizada</b> es su valor menos el costo de proveedores.</li>
+          <li>Pasa el mouse por una gráfica para ver el detalle. «Exportar a Excel» baja las ventas filtradas.</li></ul>` },
       { id: 'tarjeta', titulo: 'Tarjeta de crédito: gastos y conciliación', ver: esGerencia(), html: `<p>La pestaña «Tarjeta» tiene dos pasos.</p>
         <p><b>Paso 1 · Gastos y soportes</b> (cada vez que pagas con la tarjeta):</p>
         <ol>
@@ -3245,7 +3765,7 @@
   // ---------- Navegación ----------
   const CARGAS = {
     inicio: cargarInicio, grupos: cargarGrupos, malla: cargarMalla, comunicados: cargarComunicados, asistencia: cargarAsistencia,
-    informes: cargarInforme, solicitudes: cargarSolicitudes, equipo: recargarPersonas, tarjeta: cargarTarjeta, oficina: cargarOficina,
+    informes: cargarInforme, gestion: cargarGestion, solicitudes: cargarSolicitudes, equipo: recargarPersonas, tarjeta: cargarTarjeta, oficina: cargarOficina,
   };
   let navegacion = 0;
   async function ir(view) {
@@ -3276,7 +3796,7 @@
   }
 
   // ---------- Eventos ----------
-  const ACCIONES = '[data-view],[data-accion],[data-marcar],[data-semana],[data-mvista],[data-editar],[data-leer],[data-comf],[data-borrarcom],[data-lb],[data-lbmover],[data-quitarimg],[data-revisar],[data-cancelarsol],[data-lbsol],[data-quitarsop],[data-revquitar],[data-selinf],[data-orden],[data-restablecer],[data-activar],[data-copiar],[data-guia],[data-soltipo],[data-confirmar],[data-demo],[data-gvista],[data-gver],[data-gabrir],[data-gmover],[data-gmes],[data-gborrar],[data-tcfiltro],[data-tcpest],[data-tcpaso],[data-tcfiltrog]';
+  const ACCIONES = '[data-view],[data-accion],[data-marcar],[data-semana],[data-mvista],[data-editar],[data-leer],[data-comf],[data-borrarcom],[data-lb],[data-lbmover],[data-quitarimg],[data-revisar],[data-cancelarsol],[data-lbsol],[data-quitarsop],[data-revquitar],[data-selinf],[data-orden],[data-restablecer],[data-activar],[data-copiar],[data-guia],[data-soltipo],[data-confirmar],[data-demo],[data-gvista],[data-gver],[data-gabrir],[data-gmover],[data-gmes],[data-gborrar],[data-tcfiltro],[data-tcpest],[data-tcpaso],[data-tcfiltrog],[data-gfiltro],[data-gmesf],[data-gquitar],[data-gmedida],[data-gorden]';
 
   document.addEventListener('click', async (ev) => {
     if (fichaG.id && !(ev.target.closest && (ev.target.closest('#gficha') || ev.target.closest('[data-gver]')))) {
@@ -3414,6 +3934,14 @@
           await accion('calClave', async () => { S.grupos.clave = await q(sb.rpc('nueva_clave_calendario')); });
           return;
         case 'calCerrar': S.grupos.clave = null; render(); return;
+        case 'gesClave':
+          await accion('gesClave', async () => { S.ges.clave = await q(sb.rpc('nueva_clave_ventas')); await cargarGestion(); });
+          return;
+        case 'gesClaveCerrar': S.ges.clave = null; render(); return;
+        case 'gesRecargar': await accion('gesRecargar', cargarGestion); return;
+        case 'gesLimpiar': S.ges.f = {}; S.ges.mes = ''; render(); return;
+        case 'gesDetalle': S.ges.detalle = !S.ges.detalle; render(); return;
+        case 'gesExportar': exportarGestion(); return;
         case 'cerrarClave': S.equipo.claveNueva = null; render(); return;
         case 'validarIp':
         case 'validarEquipo': {
@@ -3608,9 +4136,20 @@
       return;
     }
     if (d.copiar === 'calendario') { if (S.grupos.clave) await copiarTexto(S.grupos.clave); return; }
+    if (d.copiar === 'ventas') { if (S.ges.clave) await copiarTexto(S.ges.clave); return; }
     if (d.copiar) {
       const c = S.equipo.claveNueva;
       if (c) await copiarTexto(`${MARCA.textoClave}\n${location.origin}${location.pathname}\nUsuario: ${c.correo}\nContraseña temporal: ${c.clave}\nAl entrar, crea tu propia contraseña.`);
+      return;
+    }
+    if ('gmesf' in d) { S.ges.mes = S.ges.mes === d.gmesf ? '' : d.gmesf; render(); return; }
+    if (d.gfiltro) { const F = S.ges.f; F[d.gfiltro] = F[d.gfiltro] === d.gvalor ? '' : d.gvalor; render(); return; }
+    if (d.gquitar) { S.ges.f[d.gquitar] = ''; render(); return; }
+    if (d.gmedida) { S.ges.medida = d.gmedida; render(); return; }
+    if (d.gorden) {
+      const o = S.ges.orden;
+      if (o.col === d.gorden) o.asc = !o.asc; else { o.col = d.gorden; o.asc = ['asesora', 'destino', 'tipo_venta', 'estado'].includes(d.gorden); }
+      render();
       return;
     }
     if (d.gvista) { S.grupos.vista = d.gvista; render(); return; }
@@ -3768,6 +4307,7 @@
 
   document.addEventListener('change', async (ev) => {
     const el = ev.target, d = el.dataset || {};
+    if (d.gsel) { S.ges.f[d.gsel] = el.value; render(); return; }
     if (d.tcsel) {
       if (d.tcsel === 'tarjeta') { S.tc.tarjeta = +el.value; S.tc.extracto = null; } else S.tc.extracto = +el.value;
       Object.assign(S.tc, { abierto: null, confirmar: null, borrar: null, filtro: 'todos', q: '' });

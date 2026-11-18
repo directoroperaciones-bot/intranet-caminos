@@ -679,6 +679,50 @@ let page;
   await page.locator('.kcard', { hasText: 'Colegio San José' }).locator('[data-gmover$="|1"]').click();
   ok(await avisa('En destino'), 'grupos: una colaboradora mueve un grupo creado por otra persona');
 
+  // ---------- Informes de gestión ----------
+  ok(!(await page.$('.tabs [data-view=gestion]')), 'gestión: una colaboradora no ve los informes de gestión');
+  await entrar('andrea.rojas@caminos.example');
+  await ir('gestion');
+  const subKpi = async () => (await page.locator('.gk.hero .gk-s').textContent()).trim();
+  const totalTodo = await subKpi();
+  ok(/\d+ ventas/.test(totalTodo), 'gestión: el indicador principal muestra valor y número de ventas');
+  ok((await page.$$('.gcol-m')).length >= 5, 'gestión: la evolución mensual tiene una columna por mes');
+  ok((await page.$$('.gdona circle')).length >= 3, 'gestión: la dona muestra los estados');
+  // Filtro por mes: todo el tablero cambia
+  const botonesMes = await page.$$('.gmeses button');
+  await botonesMes[botonesMes.length - 2].click();
+  const totalMes = await subKpi();
+  ok(totalMes !== totalTodo, 'gestión: al elegir un mes cambian los indicadores');
+  ok(await page.$('.gk-delta'), 'gestión: con un mes elegido se compara con el mes anterior');
+  ok((await page.textContent('.gchips')).includes('Mes:'), 'gestión: el mes aparece como filtro activo');
+  ok(await page.$('.gcol-m[aria-pressed=true]'), 'gestión: la columna del mes queda resaltada');
+  const nDetalle = async () => +(await page.textContent('.gdet header p')).match(/(\d+) venta/)[1];
+  const nMes = await nDetalle();
+  // Tocar un estado en la dona filtra todo (cruzado con el mes)
+  await page.click('.gdona-l button:has-text("Facturado")');
+  const nMesFact = await nDetalle();
+  ok(nMesFact < nMes && nMesFact > 0, 'gestión: tocar «Facturado» filtra el tablero sin perder el mes');
+  ok((await page.inputValue('select[data-gsel=estado]')) === 'Facturado', 'gestión: el filtro de estado se ve también en su selector');
+  await page.click('[data-accion=gesDetalle]');
+  const filasTabla = await page.$$eval('.gtabla tbody tr', (trs) => trs.map((tr) => tr.children[4].textContent.trim()));
+  ok(filasTabla.length === nMesFact && filasTabla.every((t) => t === 'Facturado'), 'gestión: el detalle muestra solo las ventas filtradas');
+  // Filtro por asesora desde la tarjeta de desempeño
+  const asesoraNom = (await page.locator('.gases-r b').first().textContent()).trim();
+  await page.locator('.gases-r').first().click();
+  ok((await page.inputValue('select[data-gsel=asesora]')) === asesoraNom, 'gestión: tocar una asesora la filtra');
+  await page.selectOption('select[data-gsel=asesora]', '');
+  ok((await page.inputValue('select[data-gsel=asesora]')) === '', 'gestión: el selector quita el filtro de asesora');
+  await page.click('[data-gmedida=cantidad]');
+  ok(/^\d+$/.test((await page.locator('.gdona-c b').textContent()).trim()), 'gestión: «Medir por ventas» cuenta ventas');
+  await page.click('[data-gmedida=valor]');
+  await page.click('[data-accion=gesLimpiar]');
+  ok(!(await page.$('.gchips')) && (await subKpi()) === totalTodo, 'gestión: «Quitar filtros» vuelve al total');
+  await page.click('[data-accion=gesClave]');
+  await esperar();
+  ok(/^[0-9a-f]{48}$/.test((await page.textContent('.gcon .clave dd.mono')).trim()), 'gestión: la administración crea la clave del script una vez');
+  await page.click('[data-accion=gesClaveCerrar]');
+  ok(!(await page.$('.gcon .clave')), 'gestión: la clave desaparece al cerrar');
+
   ok(errores.length === 0, 'sin errores de página' + (errores.length ? ': ' + errores.join(' | ') : ''));
   await browser.close();
   console.log(fallos.length ? `\n${fallos.length} fallo(s)` : '\nTodo OK');

@@ -79,6 +79,7 @@
     comunicados: [], comunicado_imagenes: [], comunicado_lecturas: [], solicitudes: [], solicitud_adjuntos: [], revisores: [],
     grupos: [], equipos: [],
     tc_tarjetas: [], tc_categorias: [], tc_extractos: [], tc_registros: [], tc_movimientos: [],
+    ventas_informe: [], ventas_estado: [],
   };
   // IP con la que «llega» el navegador de la demostración y llaves de los computadores autorizados
   const IP_DEMO = '190.25.14.7';
@@ -309,6 +310,60 @@
     });
     void r1;
   })();
+
+  // Ventas de ejemplo del gestor de reservas (informes de gestión): cinco meses, con
+  // su propia semilla para no cambiar el resto de los datos de la demostración.
+  (function sembrarVentas() {
+    let sv = 77012026;
+    const rnd = () => { sv |= 0; sv = (sv + 0x6D2B79F5) | 0; let t = Math.imul(sv ^ (sv >>> 15), 1 | sv); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
+    const de = (lista) => lista[Math.floor(rnd() * lista.length)];
+    const pesos = (pares) => { let x = rnd() * pares.reduce((s, p) => s + p[1], 0); for (const [v, w] of pares) { x -= w; if (x <= 0) return v; } return pares[0][0]; };
+    const ASESORAS = [['Daniela Castro', 5], ['Santiago Pérez', 4], ['Felipe Moreno', 3]];
+    const DESTINOS = [
+      ['Cartagena', 'Nacional', [1.8, 4.5]], ['San Andrés', 'Nacional', [2.5, 6]], ['Santa Marta', 'Nacional', [1.5, 3.8]], ['Eje Cafetero', 'Nacional', [1.2, 3]],
+      ['Las Lajas', 'Nacional', [0.9, 2.2]], ['Medellín', 'Nacional', [1, 2.6]], ['Punta Cana', 'Internacional', [6, 14]], ['Cancún', 'Internacional', [7, 16]],
+      ['Fátima y Lourdes', 'Internacional', [12, 22]], ['Tierra Santa', 'Internacional', [14, 26]], ['Panamá', 'Internacional', [3, 7]], ['Perú', 'Internacional', [6, 12]],
+    ];
+    const PLANES = { 'Las Lajas': 'Peregrinación a Las Lajas', 'Fátima y Lourdes': 'Peregrinación Fátima y Lourdes', 'Tierra Santa': 'Peregrinación Tierra Santa', 'Eje Cafetero': 'Paquete Eje Cafetero' };
+    const PROV = { Vuelo: ['Aerolínea del Caribe', 'Consolidador Andino'], Hotel: ['Hoteles Costa Azul', 'Booking Mayorista'], 'Plan Terrestre': ['Operador Receptivo Sur', 'Mayorista Horizonte', 'Turismo Religioso Global'], Asistencia: ['Asistencia Viajera'] };
+    const SEGUIMIENTO = [['No contesta o está indeciso', 6], ['Recotización', 3], ['Lo encontró más económico', 3], ['Cambia de destino o fecha', 2], ['No tiene la documentación para el viaje', 1], ['Cancela por presupuesto', 2]];
+    const [y0, m0] = HOY.split('-').map(Number);
+    let n = 0;
+    for (let atras = 4; atras >= 0; atras--) {
+      const f = new Date(Date.UTC(y0, m0 - 1 - atras, 1)), mes = f.toISOString().slice(0, 7);
+      const diasMes = new Date(Date.UTC(f.getUTCFullYear(), f.getUTCMonth() + 1, 0)).getUTCDate();
+      const tope = atras === 0 ? Math.min(+HOY.slice(8, 10), diasMes) : diasMes;
+      const cuantas = Math.round((atras === 0 ? 0.9 : 1) * (18 + rnd() * 16) * tope / diasMes);
+      for (let i = 0; i < cuantas; i++) {
+        const fecha = `${mes}-${String(1 + Math.floor(rnd() * tope)).padStart(2, '0')}`;
+        const [destino, tipoViaje, [a, b]] = de(DESTINOS);
+        const plan = PLANES[destino] || '';
+        const religioso = /Peregrinación/.test(plan);
+        const tipoVenta = religioso ? 'Religioso' : pesos([['Vacacional', 6], ['Mayorista', 3], ['Referido', 2], ['Fidelizado', 1], ['Propio', 1], ['Receptivo', 1]]);
+        const pax = religioso ? 4 + Math.floor(rnd() * 12) : 1 + Math.floor(rnd() * 4);
+        const valor = Math.round((a + rnd() * (b - a)) * 1e6 * pax * (religioso ? 0.45 : 0.35) / 1000) * 1000;
+        const estado = atras >= 2 ? pesos([['Facturado', 5], ['Cancelada', 4], ['Confirmada', 1]])
+          : atras === 1 ? pesos([['Facturado', 3], ['Confirmada', 3], ['Cancelada', 3], ['Cotizado', 1]])
+          : pesos([['Cotizado', 5], ['Confirmada', 3], ['Facturado', 1], ['Cancelada', 1]]);
+        const margen = 0.1 + rnd() * 0.14, costo = Math.round(valor * (1 - margen));
+        const partes = tipoViaje === 'Internacional' ? [['Vuelo', 0.45], ['Plan Terrestre', 0.35], ['Hotel', 0.14], ['Asistencia', 0.06]] : [['Plan Terrestre', 0.55], ['Vuelo', 0.3], ['Hotel', 0.15]];
+        const servicios = partes.map(([tipo, w]) => ({ tipo, valor: Math.round(valor * w), costo: Math.round(costo * w * (0.95 + rnd() * 0.1)) }));
+        const provs = {};
+        servicios.forEach((x) => { const nom = de(PROV[x.tipo]); provs[nom] = (provs[nom] || 0) + x.costo; });
+        const salida = sumarDias(fecha, 12 + Math.floor(rnd() * 110));
+        const cobrado = estado === 'Facturado' ? valor : estado === 'Confirmada' ? Math.round(valor * (0.3 + rnd() * 0.7) / 1000) * 1000 : 0;
+        db.ventas_informe.push({
+          id: `VD${String(++n).padStart(4, '0')}`, asesora: pesos(ASESORAS), fecha, estado, tipo_venta: tipoVenta, tipo_viaje: tipoViaje, destino, plan,
+          salida, regreso: sumarDias(salida, religioso ? 9 : 3 + Math.floor(rnd() * 5)), pasajeros: pax, valor, costo, cobrado,
+          pagado_prov: estado === 'Facturado' ? costo : estado === 'Confirmada' ? Math.round(costo * rnd() * 0.6) : 0,
+          seguimiento: estado === 'Cancelada' || (estado === 'Cotizado' && rnd() < 0.6) ? pesos(SEGUIMIENTO) : '',
+          servicios, proveedores: Object.keys(provs).map((nombre) => ({ nombre, costo: provs[nombre] })),
+        });
+      }
+    }
+    db.ventas_informe.sort((x, y) => x.fecha.localeCompare(y.fecha));
+    db.ventas_estado.push({ id: true, sincronizado: new Date(Date.now() - 4 * 60000).toISOString(), filas: db.ventas_informe.length, clave_creada: sumarDias(HOY, -20) + 'T14:00:00Z' });
+  })();
   SERIAL.forEach((t) => { sigId[t] = db[t].reduce((m, r) => Math.max(m, r.id || 0), 0) + 1; });
 
   // ---------- Sesión y permisos (equivalentes a las funciones SQL) ----------
@@ -346,6 +401,7 @@
     grupos: () => !!yo(),
     equipos: (r) => esGerencia() || lideraSede(r.sede_id),
     tc_tarjetas: () => esGerencia(), tc_categorias: () => esGerencia(), tc_extractos: () => esGerencia(), tc_registros: () => esGerencia(), tc_movimientos: () => esGerencia(),
+    ventas_informe: () => esGerencia(), ventas_estado: () => esGerencia(),
     herramientas: (r) => esGerencia() || (r.activo && (!r.areas_visibles || r.areas_visibles.includes((yo() || {}).area_id))),
   };
   // Reglas de escritura (USING y WITH CHECK)
@@ -562,6 +618,12 @@
   // ---------- RPC ----------
   const NOMBRES_PASO = { entrada: 'la entrada', salida_almuerzo: 'la salida a almorzar', regreso_almuerzo: 'el regreso de almuerzo', salida: 'la salida' };
   const RPC = {
+    nueva_clave_ventas() {
+      if (!esAdmin()) throw err('Solo la administración puede crear la clave de los informes.');
+      const e = db.ventas_estado[0];
+      if (e) e.clave_creada = ahoraISO();
+      return Array.from({ length: 48 }, () => '0123456789abcdef'[Math.floor(Math.random() * 16)]).join('');
+    },
     nueva_clave_calendario() {
       if (!esAdmin()) throw err('Solo la administración puede crear la clave del calendario.');
       return Array.from({ length: 48 }, () => '0123456789abcdef'[Math.floor(Math.random() * 16)]).join('');
