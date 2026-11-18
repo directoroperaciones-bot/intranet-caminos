@@ -737,3 +737,34 @@ tr.rot-sig > th.persona b { color: var(--pizarra); font-weight: 500; }
 table.malla .rot-ctl { margin-top: 4px; gap: 4px; }
 table.malla .rot-ctl select, table.malla .rot-desde input { min-height: 0; height: 28px; padding: 2px 8px; font-size: 12px; width: auto; max-width: 200px; border-radius: 8px; color: var(--pizarra); background-color: transparent; }
 table.malla .rot-ctl select:focus, table.malla .rot-desde input:focus { color: var(--texto); background-color: var(--blanco); }
+
+/* Grupos: ficha emergente con la información del grupo */
+.kcard { cursor: pointer; }
+.kcard-ed .i { width: 15px; height: 15px; }
+.gficha { position: fixed; z-index: 65; width: min(370px, calc(100vw - 32px)); max-height: min(78vh, 620px); overflow: auto; display: flex; flex-direction: column; gap: 10px;
+  padding: 16px 20px 18px; background: var(--blanco); border: 1px solid var(--hairline); border-top: 5px solid var(--col); border-radius: 18px; box-shadow: 0 20px 50px rgba(31, 32, 36, .2); animation: aparece .14s var(--ease); }
+@keyframes aparece { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) { .gficha { animation: none; } }
+.gficha[hidden], #gficha-fondo[hidden] { display: none; }
+.gficha-cab { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.gficha-etapa { font: 600 11px/1.3 var(--fuente); letter-spacing: .1em; text-transform: uppercase; color: var(--col); background: var(--col-bg); padding: 4px 10px; border-radius: 999px; }
+.gficha-x { padding: 4px; min-height: 0; }
+.gficha:not(.fija) .gficha-x { visibility: hidden; }
+.gficha h3 { margin: 0; font-size: 20px; line-height: 1.25; color: var(--carbon); }
+.gficha-dest { display: flex; align-items: center; gap: 6px; margin: -4px 0 0; font-weight: 500; color: var(--texto); }
+.gficha-dest .i { width: 16px; height: 16px; color: var(--coral); flex: none; }
+.gficha-dl { margin: 0; display: flex; flex-direction: column; gap: 8px; padding: 12px 14px; background: var(--hueso); border-radius: 12px; }
+.gficha-dato { display: grid; grid-template-columns: 112px minmax(0, 1fr); gap: 10px; align-items: start; }
+.gficha-dato dt { display: flex; align-items: center; gap: 6px; font: 600 11px/1.5 var(--fuente); letter-spacing: .08em; text-transform: uppercase; color: var(--pizarra); }
+.gficha-dato dt .i { width: 14px; height: 14px; flex: none; }
+.gficha-dato dd { margin: 0; font-size: 14px; color: var(--carbon); overflow-wrap: anywhere; }
+.gficha-dato dd.vacia, .gficha-texto.vacia { color: var(--pizarra); font-style: italic; }
+.gficha-n { display: inline-block; margin-left: 4px; font-size: 12px; color: var(--pizarra); }
+.gficha-sec h4 { margin: 0 0 4px; font: 600 11px/1.5 var(--fuente); letter-spacing: .08em; text-transform: uppercase; color: var(--pizarra); }
+.gficha-sec h4 small { text-transform: none; letter-spacing: 0; font-weight: 400; }
+.gficha-texto { margin: 0; font-size: 14px; line-height: 1.55; color: var(--texto); white-space: pre-wrap; overflow-wrap: anywhere; }
+.gficha-meta { margin: 0; font-size: 12px; color: var(--pizarra); }
+.gficha-acc { display: flex; gap: 8px; }
+.gficha.hoja { left: 12px !important; right: 12px; top: auto !important; bottom: 12px; width: auto; max-height: 82vh; }
+#gficha-fondo { position: fixed; inset: 0; z-index: 64; background: rgba(31, 32, 36, .45); }
+.kcard-pie { gap: 4px; } .kcard-mover .btn { padding: 4px 4px; } .kcard-pie > span:first-child { min-width: 0; }

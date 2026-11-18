@@ -103,6 +103,7 @@
     libro: '<path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/>',
     volver: '<path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/>',
     cotizador: '<rect width="16" height="20" x="4" y="2" rx="2"/><line x1="8" x2="16" y1="6" y2="6"/><line x1="16" x2="16" y1="14" y2="18"/><path d="M16 10h.01"/><path d="M12 10h.01"/><path d="M8 10h.01"/><path d="M12 14h.01"/><path d="M8 14h.01"/><path d="M12 18h.01"/><path d="M8 18h.01"/>',
+    lapiz: '<path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z"/><path d="m15 5 4 4"/>',
     globo: '<circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"/><path d="M2 12h20"/>',
     iglesia: '<path d="M10 9h4"/><path d="M12 7v5"/><path d="M14 22v-4a2 2 0 0 0-4 0v4"/><path d="M18 22V5.618a1 1 0 0 0-.553-.894l-4.553-2.277a2 2 0 0 0-1.788 0L6.553 4.724A1 1 0 0 0 6 5.618V22"/><path d="m18 7 3.447 1.724a1 1 0 0 1 .553.894V20a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V9.618a1 1 0 0 1 .553-.894L6 7"/>',
     tarjeta: '<rect width="20" height="14" x="2" y="5" rx="2"/><line x1="2" x2="22" y1="10" y2="10"/>',
@@ -320,6 +321,7 @@
     const app = document.getElementById('app');
     if (!app) return;
     app.innerHTML = vista();
+    refrescarFichaGrupo();
     if (foco) {
       const el = app.querySelector(foco);
       foco = null;
@@ -2943,9 +2945,9 @@
   function tarjetaGrupo(g) {
     const i = COLUMNAS.findIndex((c) => c.id === g.estado);
     const resp = g.responsable_id && persona(g.responsable_id);
-    return `<article class="kcard" draggable="true" data-arrastrar="${g.id}">
+    return `<article class="kcard" draggable="true" data-arrastrar="${g.id}" data-gver="${g.id}">
         <div class="kcard-arriba">
-          <button type="button" class="kcard-t" data-gabrir="${g.id}">${esc(g.nombre)}</button>
+          <button type="button" class="kcard-t" data-gver="${g.id}" aria-haspopup="dialog">${esc(g.nombre)}</button>
           ${g.destino ? `<span class="kcard-d">${ico('avion')}${esc(g.destino)}</span>` : ''}
         </div>
         <div class="kcard-abajo">
@@ -2955,6 +2957,7 @@
         <div class="kcard-pie">
           <span>${g.pasajeros != null ? `${ico('usuarios')}${g.pasajeros}` : ''}${resp ? `<span class="avatar sm" title="${esc(resp.nombre)}">${esc(initials(resp.nombre))}</span>` : ''}</span>
           <span class="kcard-mover">
+            <button type="button" class="btn txt sm kcard-ed" data-gabrir="${g.id}" aria-label="Editar ${esc(g.nombre)}" title="Editar">${ico('lapiz')}</button>
             <button type="button" class="btn txt sm" data-gmover="${g.id}|-1" aria-label="Mover a ${esc(i > 0 ? COLUMNAS[i - 1].nombre : '')}"${i <= 0 ? ' disabled' : ''}>${ico('izq')}</button>
             <button type="button" class="btn txt sm" data-gmover="${g.id}|1" aria-label="Mover a ${esc(i < COLUMNAS.length - 1 ? COLUMNAS[i + 1].nombre : '')}"${i >= COLUMNAS.length - 1 ? ' disabled' : ''}>${ico('der')}</button>
           </span>
@@ -2996,7 +2999,7 @@
       const b = fin > hasta ? n : +fin.slice(8, 10);
       const c = columna(g.estado);
       return `<div class="gantt-fila" style="${cols}">
-          <button type="button" class="gantt-nom" data-gabrir="${g.id}"><b>${esc(g.nombre)}</b><small>${esc([g.destino, g.parroquia, c.nombre].filter(Boolean).join(' · '))}</small><small class="gantt-fechas">${esc(fechasGrupo(g))}</small></button>
+          <button type="button" class="gantt-nom" data-gver="${g.id}" aria-haspopup="dialog"><b>${esc(g.nombre)}</b><small>${esc([g.destino, g.parroquia, c.nombre].filter(Boolean).join(' · '))}</small><small class="gantt-fechas">${esc(fechasGrupo(g))}</small></button>
           <span class="gantt-barra ${c.cls}${g.salida < desde ? ' sigue-antes' : ''}${fin > hasta ? ' sigue-despues' : ''}" style="grid-column: ${a + 1} / ${b + 2}" title="${esc(g.nombre + ' · ' + fechasGrupo(g))}">${esc(fechasGrupo(g))}</span>
         </div>`;
     }).join('');
@@ -3009,8 +3012,126 @@
       </div>
       <div class="card flush gantt">${enMes.length ? cab + filas : vacioLinea(mes, m, y)}</div>
       <div class="leyenda gantt-leyenda">${COLUMNAS.map((c) => `<span><i class="gantt-punto ${c.cls}"></i>${esc(c.nombre)}</span>`).join('')}</div>
-      ${sinFecha.length ? `<p class="hint">Sin fechas todavía: ${sinFecha.map((g) => `<button type="button" class="enlace" data-gabrir="${g.id}">${esc(g.nombre)}</button>`).join(', ')}.</p>` : ''}`;
+      ${sinFecha.length ? `<p class="hint">Sin fechas todavía: ${sinFecha.map((g) => `<button type="button" class="enlace" data-gver="${g.id}">${esc(g.nombre)}</button>`).join(', ')}.</p>` : ''}`;
   }
+
+  // ---------- Ficha de un grupo (emergente) ----------
+  // Al pasar el mouse sobre una tarjeta se muestra; al tocarla queda fija. En el celular es una hoja desde abajo.
+  const fichaG = { id: null, fija: false, abrir: null, cerrar: null };
+  const fichaComoHoja = () => window.innerWidth < 760 || !(window.matchMedia && window.matchMedia('(hover: hover) and (pointer: fine)').matches);
+  function fechaFicha(iso) {
+    const hoyAnio = fechaEn(miTz()).slice(0, 4);
+    return fechaLarga(iso) + (iso.slice(0, 4) !== hoyAnio ? ` de ${iso.slice(0, 4)}` : '');
+  }
+  function fichaGrupoHtml(g) {
+    const c = columna(g.estado), resp = g.responsable_id && persona(g.responsable_id);
+    const n = g.salida && g.regreso ? diasEntre(g.salida, g.regreso) + 1 : g.salida ? 1 : 0;
+    const fechas = !g.salida ? 'Sin fechas todavía'
+      : g.regreso && g.regreso !== g.salida ? `Sale el ${fechaFicha(g.salida)} y regresa el ${fechaFicha(g.regreso)}` : `${fechaFicha(g.salida)}`;
+    const dato = (icono, etq, val, vacio) => `<div class="gficha-dato"><dt>${ico(icono)}${etq}</dt><dd${val ? '' : ' class="vacia"'}>${val || vacio}</dd></div>`;
+    return `<div class="gficha-cab"><span class="gficha-etapa">${esc(c.nombre)}</span>
+        <button type="button" class="btn txt sm gficha-x" data-accion="gfichaCerrar" aria-label="Cerrar">${ico('x')}</button></div>
+      <h3 id="gficha-t">${esc(g.nombre)}</h3>
+      ${g.destino ? `<p class="gficha-dest">${ico('avion')}${esc(g.destino)}</p>` : ''}
+      <dl class="gficha-dl">
+        ${dato('iglesia', 'Parroquia', g.parroquia ? esc(g.parroquia) : '', 'Sin parroquia')}
+        ${dato('calendario', 'Fechas', esc(fechas) + (n > 1 ? ` <span class="gficha-n">${plural(n, 'día', 'días')}</span>` : ''), '')}
+        ${dato('usuarios', 'Pasajeros', g.pasajeros != null ? esc(String(g.pasajeros)) : '', 'Sin definir')}
+        ${dato('usuarioMas', 'Responsable', resp ? esc(resp.nombre) : '', 'Sin responsable')}
+      </dl>
+      <section class="gficha-sec"><h4>Alcance</h4>${g.alcance ? `<p class="gficha-texto">${esc(g.alcance)}</p>` : '<p class="gficha-texto vacia">Aún no se ha escrito qué incluye.</p>'}</section>
+      ${g.notas ? `<section class="gficha-sec"><h4>Notas internas <small>(solo el equipo)</small></h4><p class="gficha-texto">${esc(g.notas)}</p></section>` : ''}
+      <p class="gficha-meta">Creado por ${esc(nombreDe(g.creado_por))}${g.actualizado_por ? ` · último cambio de ${esc(nombreDe(g.actualizado_por))}, ${esc(fechaHora(g.actualizado, miTz()))}` : ''}</p>
+      <div class="gficha-acc"><button type="button" class="btn sm" data-gabrir="${g.id}">${ico('lapiz')}Editar</button></div>`;
+  }
+  function anclaFicha(id) {
+    return document.querySelector(`.kcard[data-gver="${id}"]`) || document.querySelector(`.gantt-nom[data-gver="${id}"]`) || document.querySelector(`[data-gver="${id}"]`);
+  }
+  function ubicarFicha() {
+    const el = document.getElementById('gficha');
+    if (!el || el.hidden) return;
+    if (el.classList.contains('hoja')) { el.style.left = el.style.top = ''; return; }
+    const a = anclaFicha(fichaG.id);
+    if (!a) { cerrarFichaGrupo(); return; }
+    const r = a.getBoundingClientRect(), w = el.offsetWidth, h = el.offsetHeight, m = 12;
+    let x = r.right + m;
+    if (x + w > window.innerWidth - m) x = r.left - w - m;
+    if (x < m) x = Math.min(Math.max(m, r.left), window.innerWidth - w - m);
+    let y = Math.min(Math.max(m, r.top), window.innerHeight - h - m);
+    if (x === r.left || (x < r.right && x + w > r.left)) y = Math.min(r.bottom + m, window.innerHeight - h - m);
+    el.style.left = Math.round(x) + 'px';
+    el.style.top = Math.round(Math.max(m, y)) + 'px';
+  }
+  function mostrarFichaGrupo(id, fija) {
+    const g = grupo(id);
+    if (!g || S.view !== 'grupos') return;
+    clearTimeout(fichaG.cerrar); clearTimeout(fichaG.abrir);
+    let el = document.getElementById('gficha'), fondo = document.getElementById('gficha-fondo');
+    if (!el) {
+      el = document.createElement('div');
+      el.id = 'gficha';
+      el.setAttribute('role', 'dialog');
+      el.setAttribute('aria-labelledby', 'gficha-t');
+      el.addEventListener('mouseenter', () => clearTimeout(fichaG.cerrar));
+      el.addEventListener('mouseleave', () => { if (!fichaG.fija) programarCierreFicha(); });
+      document.body.appendChild(el);
+      fondo = document.createElement('div');
+      fondo.id = 'gficha-fondo';
+      fondo.hidden = true;
+      document.body.appendChild(fondo);
+    }
+    const hoja = fija && fichaComoHoja();
+    el.className = `gficha ${columna(g.estado).cls}${fija ? ' fija' : ''}${hoja ? ' hoja' : ''}`;
+    el.innerHTML = fichaGrupoHtml(g);
+    el.setAttribute('aria-modal', hoja ? 'true' : 'false');
+    el.hidden = false;
+    fondo.hidden = !hoja;
+    fichaG.id = String(g.id);
+    fichaG.fija = !!fija;
+    ubicarFicha();
+    if (fija) { const b = el.querySelector('[data-gabrir]'); if (b) b.focus({ preventScroll: true }); }
+  }
+  function cerrarFichaGrupo(devolverFoco) {
+    clearTimeout(fichaG.cerrar); clearTimeout(fichaG.abrir);
+    const el = document.getElementById('gficha'), fondo = document.getElementById('gficha-fondo');
+    const id = fichaG.id;
+    if (el) el.hidden = true;
+    if (fondo) fondo.hidden = true;
+    fichaG.id = null;
+    fichaG.fija = false;
+    if (devolverFoco && id) { const b = document.querySelector(`.kcard-t[data-gver="${id}"], .gantt-nom[data-gver="${id}"]`); if (b) b.focus(); }
+  }
+  function programarCierreFicha() {
+    clearTimeout(fichaG.cerrar);
+    fichaG.cerrar = setTimeout(() => { if (!fichaG.fija) cerrarFichaGrupo(); }, 220);
+  }
+  // Después de cada render: si el grupo sigue en pantalla, la ficha se actualiza; si no, se cierra
+  function refrescarFichaGrupo() {
+    if (!fichaG.id) return;
+    const g = grupo(fichaG.id);
+    if (S.view !== 'grupos' || S.grupos.abierto || !g || !anclaFicha(fichaG.id)) { cerrarFichaGrupo(); return; }
+    const el = document.getElementById('gficha');
+    if (el && !el.hidden) { el.innerHTML = fichaGrupoHtml(g); el.className = el.className.replace(/\bc\d\b/, columna(g.estado).cls); ubicarFicha(); }
+  }
+  document.addEventListener('mouseover', (ev) => {
+    if (S.view !== 'grupos' || fichaComoHoja() || fichaG.fija) return;
+    const a = ev.target.closest && ev.target.closest('.kcard[data-gver], .gantt-nom[data-gver]');
+    if (!a) return;
+    if (a.contains(ev.relatedTarget)) return;
+    clearTimeout(fichaG.cerrar); clearTimeout(fichaG.abrir);
+    if (fichaG.id === a.dataset.gver) return;
+    fichaG.abrir = setTimeout(() => { if (!document.querySelector('.kcard.arrastrando')) mostrarFichaGrupo(a.dataset.gver, false); }, 380);
+  });
+  document.addEventListener('mouseout', (ev) => {
+    if (fichaG.fija) return;
+    const a = ev.target.closest && ev.target.closest('.kcard[data-gver], .gantt-nom[data-gver]');
+    if (!a || a.contains(ev.relatedTarget) || (ev.relatedTarget && ev.relatedTarget.closest && ev.relatedTarget.closest('#gficha'))) return;
+    clearTimeout(fichaG.abrir);
+    if (fichaG.id) programarCierreFicha();
+  });
+  document.addEventListener('dragstart', () => cerrarFichaGrupo());
+  window.addEventListener('resize', () => { if (fichaG.id) { if (fichaG.fija) mostrarFichaGrupo(fichaG.id, true); else cerrarFichaGrupo(); } });
+  document.addEventListener('scroll', () => { if (!fichaG.id) return; if (fichaG.fija) ubicarFicha(); else cerrarFichaGrupo(); }, true);
 
   function grupoFormView() {
     const G = S.grupos, b = G.borrador, editar = G.abierto !== 'nuevo';
@@ -3139,9 +3260,13 @@
   }
 
   // ---------- Eventos ----------
-  const ACCIONES = '[data-view],[data-accion],[data-marcar],[data-semana],[data-mvista],[data-editar],[data-leer],[data-comf],[data-borrarcom],[data-lb],[data-lbmover],[data-quitarimg],[data-revisar],[data-cancelarsol],[data-lbsol],[data-quitarsop],[data-revquitar],[data-selinf],[data-orden],[data-restablecer],[data-activar],[data-copiar],[data-guia],[data-soltipo],[data-confirmar],[data-demo],[data-gvista],[data-gabrir],[data-gmover],[data-gmes],[data-gborrar],[data-tcfiltro],[data-tcpest],[data-tcpaso],[data-tcfiltrog]';
+  const ACCIONES = '[data-view],[data-accion],[data-marcar],[data-semana],[data-mvista],[data-editar],[data-leer],[data-comf],[data-borrarcom],[data-lb],[data-lbmover],[data-quitarimg],[data-revisar],[data-cancelarsol],[data-lbsol],[data-quitarsop],[data-revquitar],[data-selinf],[data-orden],[data-restablecer],[data-activar],[data-copiar],[data-guia],[data-soltipo],[data-confirmar],[data-demo],[data-gvista],[data-gver],[data-gabrir],[data-gmover],[data-gmes],[data-gborrar],[data-tcfiltro],[data-tcpest],[data-tcpaso],[data-tcfiltrog]';
 
   document.addEventListener('click', async (ev) => {
+    if (fichaG.id && !(ev.target.closest && (ev.target.closest('#gficha') || ev.target.closest('[data-gver]')))) {
+      cerrarFichaGrupo();
+      if (ev.target.id === 'gficha-fondo') return;
+    }
     const el = ev.target.closest(ACCIONES);
     if (S.menu && !ev.target.closest('.menu')) {
       S.menu = false;
@@ -3172,6 +3297,7 @@
     if (d.accion) {
       switch (d.accion) {
         case 'menu': S.menu = !S.menu; render(); return;
+        case 'gfichaCerrar': cerrarFichaGrupo(true); return;
         case 'gParroquiaTodas': S.grupos.parroquia = ''; render(); return;
         case 'tcAbrir': S.tc.abierto = d.panel; S.tc.borrador = {}; S.tc.confirmar = null; S.tc.archivoRegistro = null; render(); { const f = document.querySelector('.tc-panel input:not([type=file]), .tc-panel textarea'); if (f) f.focus(); } return;
         case 'tcCerrarPanel': S.tc.abierto = null; S.tc.borrador = {}; render(); return;
@@ -3472,7 +3598,12 @@
       return;
     }
     if (d.gvista) { S.grupos.vista = d.gvista; render(); return; }
-    if (d.gabrir) { abrirGrupo(d.gabrir); return; }
+    if (d.gver) {
+      if (fichaG.id === String(d.gver) && fichaG.fija) { cerrarFichaGrupo(); return; }
+      mostrarFichaGrupo(d.gver, true);
+      return;
+    }
+    if (d.gabrir) { cerrarFichaGrupo(); abrirGrupo(d.gabrir); return; }
     if (d.gmover) {
       const [id, paso] = d.gmover.split('|');
       const g = grupo(id), i = g ? COLUMNAS.findIndex((c) => c.id === g.estado) + +paso : -1;
@@ -3794,6 +3925,7 @@
 
   document.addEventListener('keydown', (ev) => {
     if (ev.key === 'Escape') {
+      if (fichaG.id) { cerrarFichaGrupo(true); return; }
       if (S.lb) { S.lb = null; render(); return; }
       if (S.menu) { S.menu = false; render(); const a = document.querySelector('.avatar'); if (a) a.focus(); return; }
       if (S.malla.edit) { S.malla.edit = null; render(); return; }
