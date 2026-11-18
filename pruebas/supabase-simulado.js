@@ -80,6 +80,7 @@
     grupos: [], equipos: [],
     tc_tarjetas: [], tc_categorias: [], tc_extractos: [], tc_registros: [], tc_movimientos: [],
     ventas_informe: [], ventas_estado: [],
+    clientes_ext: [], ventas_cliente: [], cobros_cliente: [], cuentas_cliente: [],
   };
   // IP con la que «llega» el navegador de la demostración y llaves de los computadores autorizados
   const IP_DEMO = '190.25.14.7';
@@ -364,6 +365,41 @@
     db.ventas_informe.sort((x, y) => x.fecha.localeCompare(y.fecha));
     db.ventas_estado.push({ id: true, sincronizado: new Date(Date.now() - 4 * 60000).toISOString(), filas: db.ventas_informe.length, clave_creada: sumarDias(HOY, -20) + 'T14:00:00Z', boton_listo: true, solicitado: null, solicitado_por: null, pedido_id: null });
   })();
+
+  // Extranet: clientes de ejemplo de AppSheet (ficticios). Ricardo ya tiene cuenta.
+  const CLIENTES_DEMO = [
+    { id: 'cli-ricardo', nombre: 'Ricardo Ejemplo Viajes', contacto: 'Ricardo Ejemplo', correo: 'ricardo.aliado@cliente.example', tipo: 'Freelance', pct_terrestre: 0.1, part_ta: 0.5, modalidad: 'Retorno', usuario: 'c1000000-0000-4000-8000-000000000001' },
+    { id: 'cli-sanpedro', nombre: 'Parroquia San Pedro (ejemplo)', contacto: 'Padre Andrés Ejemplo', correo: 'parroquia.sanpedro@cliente.example', tipo: 'PARROQUIA', pct_terrestre: null, part_ta: null, modalidad: '' },
+    { id: 'cli-andinos', nombre: 'Viajes Andinos (ejemplo)', contacto: 'Marta Ejemplo', correo: '', tipo: 'Freelance', pct_terrestre: null, part_ta: null, modalidad: '' },
+  ];
+  (function sembrarExtranet() {
+    CLIENTES_DEMO.forEach((c) => {
+      const x = Object.assign({}, c); delete x.usuario;
+      db.clientes_ext.push(x);
+      if (c.usuario) {
+        usuarios.push({ id: c.usuario, email: c.correo, password: CLAVE_DEMO, banned: false, user_metadata: { extranet: true } });
+        db.cuentas_cliente.push({ usuario_id: c.usuario, cliente_id: c.id, correo: c.correo, activo: true, debe_cambiar: false, creado: sumarDias(HOY, -15) + 'T15:00:00Z', creado_por: GENTE[0].id, ultimo_ingreso: null });
+      }
+    });
+    const V = (id, cli, dias, estado, destino, viaje, salidaDias, noches, viajeros, valor, pagado, servicios, plan) => {
+      const fecha = sumarDias(HOY, -dias), salida = sumarDias(HOY, salidaDias);
+      const terrestre = servicios.filter((x) => x.tipo === 'Plan Terrestre').length ? valor * 0.55 : 0;
+      const comision = cli === 'cli-ricardo' && (estado === 'Confirmada' || estado === 'Facturado') ? Math.round(terrestre * 0.1 + 70000 * 0.5 * servicios.filter((x) => x.tipo === 'Vuelo').length) : 0;
+      db.ventas_cliente.push({ id, cliente_id: cli, fecha, estado, tipo_venta: cli === 'cli-sanpedro' ? 'Religioso' : 'Mayorista', tipo_viaje: viaje, destino, plan: plan || '',
+        salida, regreso: sumarDias(salida, noches), pasajeros: viajeros.length, viajeros, servicios, valor, cobrado: pagado, comision });
+    };
+    const vuelo = (r) => ({ tipo: 'Vuelo', detalle: r, cantidad: 1 });
+    V('VC-0101', 'cli-ricardo', 75, 'Facturado', 'Punta Cana', 'Internacional', -20, 5, ['Laura Ejemplo', 'Andrés Ejemplo'], 9840000, 9840000, [vuelo('BOG-PUJ-BOG · Wingo'), { tipo: 'Plan Terrestre', detalle: 'Todo incluido · Doble', cantidad: 1 }, { tipo: 'Asistencia', detalle: '', cantidad: 2 }]);
+    V('VC-0102', 'cli-ricardo', 60, 'Facturado', 'Cartagena', 'Nacional', -8, 3, ['Camilo Ejemplo', 'Sara Ejemplo', 'Tomás Ejemplo'], 4620000, 4620000, [vuelo('BOG-CTG-BOG · Avianca'), { tipo: 'Hotel', detalle: 'Hotel ejemplo Bocagrande · Triple', cantidad: 1 }]);
+    V('VC-0103', 'cli-ricardo', 40, 'Cancelada', 'San Andrés', 'Nacional', 30, 4, ['Julia Ejemplo'], 3150000, 0, [vuelo('BOG-ADZ-BOG'), { tipo: 'Plan Terrestre', detalle: 'Doble', cantidad: 1 }]);
+    V('VC-0104', 'cli-ricardo', 28, 'Confirmada', 'Cancún', 'Internacional', 12, 6, ['Felipe Ejemplo', 'Natalia Ejemplo'], 12380000, 6000000, [vuelo('BOG-CUN-BOG · Viva'), { tipo: 'Plan Terrestre', detalle: 'Todo incluido · Doble', cantidad: 1 }, { tipo: 'Asistencia', detalle: '', cantidad: 2 }]);
+    V('VC-0105', 'cli-ricardo', 18, 'Facturado', 'Santa Marta', 'Nacional', 25, 3, ['Diana Ejemplo', 'Óscar Ejemplo', 'Lucía Ejemplo', 'Mateo Ejemplo'], 5720000, 5720000, [vuelo('BOG-SMR-BOG'), { tipo: 'Plan Terrestre', detalle: 'Hotel + traslados · Cuádruple', cantidad: 1 }]);
+    V('VC-0106', 'cli-ricardo', 9, 'Confirmada', 'Lima y Cusco', 'Internacional', 48, 7, ['Ricardo Ejemplo', 'Elena Ejemplo'], 14900000, 3000000, [vuelo('BOG-LIM-CUZ-BOG · LATAM'), { tipo: 'Plan Terrestre', detalle: 'Circuito Machu Picchu · Doble', cantidad: 1 }, { tipo: 'Asistencia', detalle: '', cantidad: 2 }]);
+    V('VC-0107', 'cli-ricardo', 3, 'Cotizado', 'Panamá', 'Internacional', 60, 4, ['Marco Ejemplo'], 3480000, 0, [vuelo('BOG-PTY-BOG')]);
+    V('VC-0201', 'cli-sanpedro', 50, 'Facturado', 'Las Lajas', 'Nacional', 15, 3, ['Grupo parroquial (30 peregrinos)'], 36000000, 24000000, [{ tipo: 'Plan Terrestre', detalle: 'Bus + hotel · Doble', cantidad: 1 }], 'Peregrinación a Las Lajas');
+    db.cobros_cliente.push({ id: 'CC-01', cliente_id: 'cli-ricardo', periodo: 'Mes anterior', desde: sumarDias(HOY, -60), hasta: sumarDias(HOY, -31), ventas: 2, total: 495000, estado: 'Pagada', enviada: sumarDias(HOY, -28) });
+    db.cobros_cliente.push({ id: 'CC-02', cliente_id: 'cli-ricardo', periodo: 'Este mes', desde: sumarDias(HOY, -30), hasta: sumarDias(HOY, -1), ventas: 1, total: 352000, estado: 'Enviada', enviada: sumarDias(HOY, -1) });
+  })();
   SERIAL.forEach((t) => { sigId[t] = db[t].reduce((m, r) => Math.max(m, r.id || 0), 0) + 1; });
 
   // ---------- Sesión y permisos (equivalentes a las funciones SQL) ----------
@@ -373,6 +409,7 @@
   const yo = () => db.perfiles.find((p) => p.id === uid() && p.activo) || null;
   const perfil = (id) => db.perfiles.find((p) => p.id === id) || {};
   const esAdmin = () => !!(yo() && yo().es_admin);
+  const miCliente = () => { const c = db.cuentas_cliente.find((x) => x.usuario_id === uid() && x.activo); return c ? c.cliente_id : null; };
   const esGerencia = () => !!(yo() && (yo().rol === 'gerente' || yo().es_admin));
   const esSupervisor = () => !!(yo() && yo().rol === 'supervisor');
   const lideraSede = (s) => !!(yo() && (esGerencia() || (yo().rol === 'directora' && yo().sede_id === s)));
@@ -402,6 +439,14 @@
     equipos: (r) => esGerencia() || lideraSede(r.sede_id),
     tc_tarjetas: () => esGerencia(), tc_categorias: () => esGerencia(), tc_extractos: () => esGerencia(), tc_registros: () => esGerencia(), tc_movimientos: () => esGerencia(),
     ventas_informe: () => esGerencia(), ventas_estado: () => esGerencia(),
+    // Las tablas del equipo solo las lee el personal activo (una cuenta de cliente no)
+    sedes: () => !!yo(), areas: () => !!yo(), configuracion: () => !!yo(), turnos: () => !!yo(), malla: () => !!yo(),
+    malla_historial: () => !!yo(), horario_base: () => !!yo(), horario_rotacion: () => !!yo(),
+    perfiles: (r) => !!yo() || r.id === uid(),
+    clientes_ext: (r) => esGerencia() || r.id === miCliente(),
+    ventas_cliente: (r) => esGerencia() || r.cliente_id === miCliente(),
+    cobros_cliente: (r) => esGerencia() || r.cliente_id === miCliente(),
+    cuentas_cliente: (r) => esAdmin() || r.usuario_id === uid(),
     herramientas: (r) => esGerencia() || (r.activo && (!r.areas_visibles || r.areas_visibles.includes((yo() || {}).area_id))),
   };
   // Reglas de escritura (USING y WITH CHECK)
@@ -732,7 +777,25 @@
     },
     es_admin() { return esAdmin(); },
     puede_gestionar_cuentas() { return gestionaCuentas(); },
-    malla_efectiva({ p_desde, p_hasta }) { return mallaEfectiva(p_desde, p_hasta); },
+    malla_efectiva({ p_desde, p_hasta }) { return yo() ? mallaEfectiva(p_desde, p_hasta) : []; },
+    mi_cuenta_cliente() {
+      const c = db.cuentas_cliente.find((x) => x.usuario_id === uid());
+      if (!c) return null;
+      if (!c.activo) return { activo: false };
+      c.ultimo_ingreso = ahoraISO();
+      const x = db.clientes_ext.find((k) => k.id === c.cliente_id) || {};
+      const e = db.ventas_estado[0] || {};
+      return { activo: true, cliente_id: c.cliente_id, debe_cambiar: c.debe_cambiar, nombre: x.nombre || '', contacto: x.contacto || '', tipo: x.tipo || '',
+        comision: x.pct_terrestre != null || x.part_ta != null, pct_terrestre: x.pct_terrestre, part_ta: x.part_ta, modalidad: x.modalidad || '', sincronizado: e.sincronizado || null };
+    },
+    clave_cliente_cambiada() { const c = db.cuentas_cliente.find((x) => x.usuario_id === uid()); if (c) c.debe_cambiar = false; return null; },
+    activar_cuenta_cliente({ p_cliente, p_activo }) {
+      if (!esAdmin()) throw err('Solo la administración maneja las cuentas de clientes.');
+      const c = db.cuentas_cliente.find((x) => x.cliente_id === p_cliente);
+      if (!c) throw err('Ese cliente aún no tiene cuenta.');
+      c.activo = !!p_activo;
+      return null;
+    },
   };
   function rpc(nombre, args) {
     const q = new Consulta('rpc:' + nombre, null);
@@ -825,6 +888,7 @@
   }
   async function invocar(nombre, { body }) {
     await espera();
+    if (nombre === 'crear-cliente') return invocarCliente(body || {});
     if (nombre !== 'crear-usuario') return errorFuncion(404, 'Función desconocida.');
     if (!sesion) return errorFuncion(401, 'Falta la sesión.');
     if (!gestionaCuentas()) return errorFuncion(403, 'No tienes permiso para administrar cuentas.');
@@ -866,6 +930,40 @@
     return errorFuncion(400, 'Acción desconocida.');
   }
 
+  // Edge Function crear-cliente (extranet)
+  function invocarCliente(b) {
+    if (!sesion) return errorFuncion(401, 'Falta la sesión.');
+    if (!esAdmin()) return errorFuncion(403, 'Solo la administración maneja las cuentas de clientes.');
+    const cli = db.clientes_ext.find((x) => x.id === b.cliente_id);
+    if (!cli) return errorFuncion(404, 'Ese cliente no está en AppSheet (hoja CLIENTES).');
+    const cuenta = db.cuentas_cliente.find((x) => x.cliente_id === cli.id);
+    if (b.accion === 'crear') {
+      if (cuenta) return errorFuncion(409, 'Este cliente ya tiene cuenta. Usa «Nueva contraseña».');
+      const correo = String(cli.correo || '').trim().toLowerCase();
+      if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(correo)) return errorFuncion(400, 'Este cliente no tiene un correo válido en AppSheet (hoja CLIENTES, columna Email). Agrégalo allá y actualiza los informes.');
+      if (!b.contrasena || b.contrasena.length < 8) return errorFuncion(400, 'La contraseña debe tener 8 caracteres o más.');
+      if (usuarios.some((u) => u.email === correo)) return errorFuncion(409, 'Ese correo ya tiene una cuenta (puede ser del equipo de Caminos). Usa otro correo en AppSheet.');
+      const id = uuid();
+      usuarios.push({ id, email: correo, password: b.contrasena, banned: false, user_metadata: { debe_cambiar_contrasena: true, extranet: true } });
+      db.cuentas_cliente.push({ usuario_id: id, cliente_id: cli.id, correo, activo: true, debe_cambiar: true, creado: ahoraISO(), creado_por: uid(), ultimo_ingreso: null });
+      return { data: { ok: true, correo }, error: null };
+    }
+    if (!cuenta) return errorFuncion(404, 'Este cliente aún no tiene cuenta.');
+    const u = usuarios.find((x) => x.id === cuenta.usuario_id);
+    if (b.accion === 'restablecer') {
+      if (!b.contrasena || b.contrasena.length < 8) return errorFuncion(400, 'La contraseña debe tener 8 caracteres o más.');
+      u.password = b.contrasena;
+      cuenta.debe_cambiar = true;
+      return { data: { ok: true, correo: cuenta.correo }, error: null };
+    }
+    if (b.accion === 'desactivar' || b.accion === 'reactivar') {
+      cuenta.activo = b.accion === 'reactivar';
+      u.banned = !cuenta.activo;
+      return { data: { ok: true, correo: cuenta.correo }, error: null };
+    }
+    return errorFuncion(400, 'Acción desconocida.');
+  }
+
   // ---------- API pública ----------
   window.supabase = {
     createClient() {
@@ -883,6 +981,7 @@
   window.SUPABASE_DEMO = {
     clave: CLAVE_DEMO,
     cuentas: GENTE.filter((g) => g.etiqueta).map((g) => ({ correo: g.correo, nombre: g.nombre, rol: g.etiqueta })),
+    clientes: CLIENTES_DEMO.filter((c) => c.usuario).map((c) => ({ correo: c.correo, nombre: c.contacto, rol: c.tipo === 'Freelance' ? 'Aliado' : 'Cliente' })),
     db, // para pruebas automatizadas
   };
 })();

@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <base href="../">
+  <title>Portal de clientes · demostración</title>
+  <meta name="description" content="Portal de clientes de Caminos: consulta tus ventas, viajeros, pagos y saldo.">
+  <meta name="theme-color" content="#F25061">
+  <meta name="color-scheme" content="light">
+  <meta name="robots" content="noindex, nofollow">
+  <link rel="icon" type="image/svg+xml" href="assets/favicon.svg">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap">
+  <!-- En cada publicación se cambia ?v= (ver LEEME.md) -->
+  <link rel="stylesheet" href="assets/estilos.css?v=2026.11.18-7">
+  <link rel="stylesheet" href="assets/app.css?v=2026.11.18-7">
+  <link rel="stylesheet" href="assets/clientes.css?v=2026.11.18-7">
+</head>
+<body>
+  <div id="app"></div>
+  <noscript><p style="padding:24px">El portal necesita JavaScript activado.</p></noscript>
+  <!-- Igual que clientes/index.html, pero con Supabase simulado en memoria y datos de ejemplo -->
+  <script src="pruebas/supabase-simulado.js?v=2026.11.18-7"></script>
+  <script>window.INTRANET_CONFIG = { supabaseUrl: 'https://demo.local', supabaseKey: 'demo', demo: window.SUPABASE_DEMO };</script>
+  <script src="assets/clientes.js?v=2026.11.18-7"></script>
+</body>
+</html>

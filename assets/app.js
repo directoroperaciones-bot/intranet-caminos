@@ -376,7 +376,11 @@
   async function cargarUsuario(user) {
     S.usuario = user;
     const perfil = await q(sb.from('perfiles').select('*').eq('id', user.id).maybeSingle());
-    if (!perfil || !perfil.activo) { S.pantalla = 'sinperfil'; render(); return; }
+    if (!perfil || !perfil.activo) {
+      // ¿Es una cuenta del portal de clientes? Entonces se le indica su portal.
+      try { S.esCliente = !perfil && !!(await q(sb.rpc('mi_cuenta_cliente'))); } catch (e) { S.esCliente = false; }
+      S.pantalla = 'sinperfil'; render(); return;
+    }
     S.perfil = perfil;
     if (S.recuperacion) { S.pantalla = 'clave'; foco = 'input[name=clave]'; render(); return; }
     if (user.user_metadata && user.user_metadata.debe_cambiar_contrasena) { S.pantalla = 'clave'; foco = 'input[name=clave]'; render(); return; }
@@ -539,6 +543,15 @@
   }
 
   function sinPerfilView() {
+    if (S.esCliente) {
+      return marcoAcceso(`<div class="card login-card">
+        <span class="eyebrow">Portal de clientes</span>
+        <h2>Esta cuenta es del portal de clientes</h2>
+        <p>La intranet es solo para el equipo de ${esc(MARCA.nombre)}. Tus ventas están en el portal de clientes.</p>
+        <a class="btn block" href="${CFG.demo ? 'pruebas/clientes-demo.html' : 'clientes/'}">${ico('flecha')}Ir al portal de clientes</a>
+        <button class="btn txt block" type="button" data-accion="salir">Salir</button>
+      </div>`);
+    }
     return marcoAcceso(`<div class="card login-card">
         <span class="eyebrow">Cuenta sin perfil</span>
         <h2>Tu cuenta aún no está lista</h2>
@@ -2154,7 +2167,7 @@
     const G = S.ges, filas = gesOrdenadas();
     if (!G.detalle) return '';
     const num = ['pasajeros', 'valor', 'utilidad', 'cobrado'];
-    return `<div class="tabla-scroll"><table class="tabla gtabla"><thead><tr>${GES_COLS.map(([k, n]) => `<th${num.includes(k) ? ' class="num"' : ''}><button type="button" data-gorden="${k}">${n}${G.orden.col === k ? (G.orden.asc ? ' ↑' : ' ↓') : ''}</button></th>`).join('')}</tr></thead>
+    return `<div class="tablewrap"><table class="gtabla"><thead><tr>${GES_COLS.map(([k, n]) => `<th${num.includes(k) ? ' class="num"' : ''}><button type="button" data-gorden="${k}">${n}${G.orden.col === k ? (G.orden.asc ? ' ↑' : ' ↓') : ''}</button></th>`).join('')}</tr></thead>
       <tbody>${filas.slice(0, 500).map((r) => `<tr>
         <td>${fechaCorta(r.fecha)}</td><td>${esc(r.asesora)}</td><td>${esc(r.destino)}${r.plan ? `<small>${esc(r.plan)}</small>` : ''}</td><td>${esc(r.tipo_venta)}</td>
         <td><span class="gest"><i style="background:${colorEstado(r.estado)}"></i>${esc(r.estado)}</span></td><td>${r.salida ? fechaCorta(r.salida) : '—'}</td>
@@ -2363,8 +2376,8 @@
     return out.join('');
   }
 
-  async function funcionCuentas(body) {
-    const { data, error } = await sb.functions.invoke('crear-usuario', { body });
+  async function funcionCuentas(body, nombre) {
+    const { data, error } = await sb.functions.invoke(nombre || 'crear-usuario', { body });
     if (error) {
       let msg = error.message;
       try { const j = await error.context.json(); if (j && j.error) msg = j.error; } catch (e) { /* sin cuerpo */ }
@@ -2375,10 +2388,83 @@
   }
   async function recargarPersonas() {
     S.personas = await todas(() => sb.from('perfiles').select('*').order('nombre'));
+    if (esAdmin()) await cargarClientesExt();
+  }
+
+  // ---------- Clientes de la extranet (administración) ----------
+  // Los clientes salen de la hoja CLIENTES de AppSheet (los trae la tarea diaria).
+  // La cuenta usa el correo de AppSheet; la contraseña temporal se ve una sola vez.
+  async function cargarClientesExt() {
+    const [clientes, cuentas, ventas] = await Promise.all([
+      q(sb.from('clientes_ext').select('*').order('nombre')),
+      q(sb.from('cuentas_cliente').select('*')),
+      todas(() => sb.from('ventas_cliente').select('id, cliente_id')),
+    ]);
+    S.cx = { clientes: clientes || [], cuentas: cuentas || [], ventas: ventas || [] };
+  }
+  const urlPortal = () => location.origin + location.pathname.replace(/[^/]*$/, '').replace(/pruebas\/$/, '') + (CFG.demo ? 'pruebas/clientes-demo.html' : 'clientes/');
+  function clientesView() {
+    const X = S.cx || { clientes: [], cuentas: [], ventas: [] }, E = S.equipo;
+    const cuenta = (id) => X.cuentas.find((c) => c.cliente_id === id);
+    const nVentas = (id) => X.ventas.filter((v) => v.cliente_id === id).length;
+    const clave = E.claveCliente ? `<section class="clave card" aria-live="polite">
+        <span class="eyebrow">${E.claveCliente.nueva ? 'Acceso creado' : 'Contraseña nueva'}</span>
+        <h2>${esc(E.claveCliente.nombre)}</h2>
+        <p class="hint">Esta contraseña temporal se muestra <b>una sola vez</b>. Envíasela por un canal privado; al entrar, creará la suya.</p>
+        <dl><div><dt>Portal</dt><dd>${esc(urlPortal())}</dd></div><div><dt>Usuario</dt><dd>${esc(E.claveCliente.correo)}</dd></div><div><dt>Contraseña temporal</dt><dd class="mono">${esc(E.claveCliente.clave)}</dd></div></dl>
+        <div class="acc"><button type="button" class="btn" data-copiar="cliente">${ico('copiar')}Copiar mensaje</button><button type="button" class="btn ghost" data-accion="cerrarClaveCliente">Listo</button></div>
+      </section>` : '';
+    const f = norm(E.filtroCx || '').trim();
+    const lista = X.clientes.filter((c) => !f || norm(c.nombre + ' ' + c.contacto + ' ' + c.correo + ' ' + c.tipo).includes(f));
+    const fila = (c) => {
+      const k = cuenta(c.id), conf = E.confirmarCx && E.confirmarCx.id === c.id ? E.confirmarCx.accion : null;
+      const estado = !k ? '<span class="chip mute xs">Sin acceso</span>' : k.activo ? `<span class="chip ok xs">Activo</span>${k.ultimo_ingreso ? `<small class="hint">Entró ${esc(fechaHora(k.ultimo_ingreso, miTz()))}</small>` : '<small class="hint">Aún no ha entrado</small>'}` : '<span class="chip bad xs">Desactivado</span>';
+      let acc;
+      if (conf) {
+        acc = `<span class="hint">${conf === 'restablecer' ? '¿Dar una contraseña nueva?' : conf === 'desactivar' ? '¿Quitarle el acceso?' : '¿Devolverle el acceso?'}</span>
+          <button type="button" class="btn sm" data-cx="${esc(conf)}" data-cxid="${esc(c.id)}"${ocupado('cx')}>Sí</button><button type="button" class="btn txt sm" data-cx="no">No</button>`;
+      } else if (!k) {
+        acc = c.correo ? `<button type="button" class="btn sm" data-cx="crear" data-cxid="${esc(c.id)}"${ocupado('cx')}>${ico('usuarioMas')}Crear acceso</button>` : '<span class="hint">Falta el correo en AppSheet</span>';
+      } else {
+        acc = `<button type="button" class="btn ghost sm" data-cxpedir="restablecer" data-cxid="${esc(c.id)}">${ico('llave')}Nueva contraseña</button>
+          ${k.activo ? `<button type="button" class="btn txt sm" data-cxpedir="desactivar" data-cxid="${esc(c.id)}">Desactivar</button>` : `<button type="button" class="btn txt sm" data-cxpedir="reactivar" data-cxid="${esc(c.id)}">Reactivar</button>`}`;
+      }
+      return `<tr>
+        <td><b>${esc(c.nombre || c.contacto || c.id)}</b>${c.contacto && c.contacto !== c.nombre ? `<small class="hint">${esc(c.contacto)}</small>` : ''}</td>
+        <td>${esc(c.tipo === 'Freelance' ? 'Aliado (freelance)' : c.tipo ? c.tipo.charAt(0) + c.tipo.slice(1).toLowerCase() : '—')}</td>
+        <td>${c.correo ? esc(c.correo) : '<span class="chip warn xs">Sin correo</span>'}</td>
+        <td class="num">${nVentas(c.id)}</td>
+        <td><div class="cx-estado">${estado}</div></td>
+        <td><div class="acc">${acc}</div></td></tr>`;
+    };
+    return `${clave}<section class="card cx-adm-intro"><p>Los clientes salen de la hoja <b>CLIENTES</b> de AppSheet (se actualiza con los informes, todos los días a las 6 a. m. o con «Actualizar» en Gestión). Cada cliente entra a <a href="${esc(urlPortal())}" target="_blank" rel="noopener">${esc(urlPortal())}</a> con el correo que tiene en AppSheet y ve <b>solo sus ventas</b>: estado, fechas, viajeros, servicios, valor, pagos, saldo y su comisión. Nunca ve costos, utilidad ni proveedores.</p></section>
+      <section><div class="toolbar"><label class="search">${ico('buscar')}<input type="search" data-buscar="clientes" value="${esc(E.filtroCx || '')}" placeholder="Buscar cliente" aria-label="Buscar clientes"></label><span class="hint">${plural(X.clientes.length, 'cliente', 'clientes')} · ${plural(X.cuentas.filter((k) => k.activo).length, 'con acceso', 'con acceso')}</span></div>
+        <div class="tablewrap card flush"><table class="perm equipo"><thead><tr><th scope="col">Cliente</th><th scope="col">Tipo</th><th scope="col">Correo en AppSheet</th><th scope="col" class="num">Ventas</th><th scope="col">Acceso</th><th scope="col">Acciones</th></tr></thead>
+          <tbody>${lista.length ? lista.map(fila).join('') : `<tr><td colspan="6" class="hint">${X.clientes.length ? 'Ningún cliente coincide con la búsqueda.' : 'Aún no llegan clientes de AppSheet. Toca «Actualizar» en Gestión.'}</td></tr>`}</tbody></table></div></section>`;
+  }
+  async function accionCliente(que, id) {
+    const X = S.cx, c = X.clientes.find((x) => x.id === id);
+    await accion('cx', async () => {
+      if (que === 'crear' || que === 'restablecer') {
+        const clave = claveTemporal();
+        const r = await funcionCuentas({ accion: que, cliente_id: id, contrasena: clave }, 'crear-cliente');
+        S.equipo.claveCliente = { nombre: c.contacto || c.nombre, correo: (r && r.correo) || c.correo, clave, nueva: que === 'crear' };
+        toast(que === 'crear' ? 'Acceso creado.' : 'Contraseña nueva lista.');
+      } else {
+        await funcionCuentas({ accion: que, cliente_id: id }, 'crear-cliente');
+        toast(que === 'desactivar' ? 'Acceso desactivado.' : 'Acceso reactivado.');
+      }
+      S.equipo.confirmarCx = null;
+      await cargarClientesExt();
+    });
   }
 
   function equipoView() {
     const E = S.equipo, b = E.borrador;
+    const pest = esAdmin() ? `<div class="seg eq-pest" role="group" aria-label="Cuentas">${[['equipo', 'Equipo'], ['clientes', 'Clientes (extranet)']].map(([k, n]) => `<button type="button" data-eqpest="${k}" aria-pressed="${(E.pest || 'equipo') === k}">${n}</button>`).join('')}</div>` : '';
+    if (esAdmin() && E.pest === 'clientes') {
+      return encabezado('Cuentas', 'Clientes de la <em>extranet</em>', 'Da acceso a los clientes de AppSheet para que vean sus ventas en el portal de clientes.', pest) + clientesView();
+    }
     const rolesCrear = esAdmin() ? Object.keys(ROLES) : ['colaborador'];
     const clave = E.claveNueva ? `<section class="clave card" aria-live="polite">
         <span class="eyebrow">${E.claveNueva.nueva ? 'Cuenta creada' : 'Contraseña nueva'}</span>
@@ -2403,7 +2489,7 @@
       </section>`;
     const f = norm(E.filtro).trim();
     const lista = S.personas.filter((p) => !f || norm(p.nombre + ' ' + p.correo).includes(f));
-    return encabezado('Cuentas', '<em>Equipo</em>', 'Crea cuentas, cambia sede, área o rol, da una contraseña nueva o desactiva a quien ya no trabaja aquí. Desactivar no borra su historial.')
+    return encabezado('Cuentas', '<em>Equipo</em>', 'Crea cuentas, cambia sede, área o rol, da una contraseña nueva o desactiva a quien ya no trabaja aquí. Desactivar no borra su historial.', pest)
       + clave + crear
       + `<section><div class="toolbar"><label class="search">${ico('buscar')}<input type="search" data-buscar="equipo" value="${esc(E.filtro)}" placeholder="Buscar por nombre o correo" aria-label="Buscar personas"></label><span class="hint">${plural(activas().length, 'cuenta activa', 'cuentas activas')}</span></div>
         <div class="tablewrap card flush"><table class="perm equipo"><thead><tr><th scope="col">Persona</th>${variasSedes() ? '<th scope="col">Sede</th>' : ''}<th scope="col">Área</th><th scope="col">Rol</th><th scope="col">Estado</th><th scope="col">Acciones</th></tr></thead>
@@ -3864,7 +3950,7 @@
   }
 
   // ---------- Eventos ----------
-  const ACCIONES = '[data-view],[data-accion],[data-marcar],[data-semana],[data-mvista],[data-editar],[data-leer],[data-comf],[data-borrarcom],[data-lb],[data-lbmover],[data-quitarimg],[data-revisar],[data-cancelarsol],[data-lbsol],[data-quitarsop],[data-revquitar],[data-selinf],[data-orden],[data-restablecer],[data-activar],[data-copiar],[data-guia],[data-soltipo],[data-confirmar],[data-demo],[data-gvista],[data-gver],[data-gabrir],[data-gmover],[data-gmes],[data-gborrar],[data-tcfiltro],[data-tcpest],[data-tcpaso],[data-tcfiltrog],[data-gfiltro],[data-gmesf],[data-gquitar],[data-gmedida],[data-gorden]';
+  const ACCIONES = '[data-view],[data-accion],[data-marcar],[data-semana],[data-mvista],[data-editar],[data-leer],[data-comf],[data-borrarcom],[data-lb],[data-lbmover],[data-quitarimg],[data-revisar],[data-cancelarsol],[data-lbsol],[data-quitarsop],[data-revquitar],[data-selinf],[data-orden],[data-restablecer],[data-activar],[data-copiar],[data-guia],[data-soltipo],[data-confirmar],[data-demo],[data-gvista],[data-gver],[data-gabrir],[data-gmover],[data-gmes],[data-gborrar],[data-tcfiltro],[data-tcpest],[data-tcpaso],[data-tcfiltrog],[data-gfiltro],[data-gmesf],[data-gquitar],[data-gmedida],[data-gorden],[data-eqpest],[data-cx],[data-cxpedir]';
 
   document.addEventListener('click', async (ev) => {
     if (fichaG.id && !(ev.target.closest && (ev.target.closest('#gficha') || ev.target.closest('[data-gver]')))) {
@@ -4006,6 +4092,7 @@
           await accion('gesClave', async () => { S.ges.clave = await q(sb.rpc('nueva_clave_ventas')); await cargarGestion(); });
           return;
         case 'gesClaveCerrar': S.ges.clave = null; render(); return;
+        case 'cerrarClaveCliente': S.equipo.claveCliente = null; render(); return;
         case 'gesConexion': S.ges.conAbierta = !S.ges.conAbierta; render(); return;
         case 'gesActualizar': await actualizarGestion(); return;
         case 'gesTareaQuitar':
@@ -4213,9 +4300,21 @@
     }
     if (d.copiar === 'calendario') { if (S.grupos.clave) await copiarTexto(S.grupos.clave); return; }
     if (d.copiar === 'ventas') { if (S.ges.clave) await copiarTexto(S.ges.clave); return; }
+    if (d.copiar === 'cliente') {
+      const k = S.equipo.claveCliente;
+      if (k) await copiarTexto(`Portal de clientes de ${MARCA.nombre}\n${urlPortal()}\nUsuario: ${k.correo}\nContraseña temporal: ${k.clave}\nAl entrar, crea tu propia contraseña.`);
+      return;
+    }
     if (d.copiar) {
       const c = S.equipo.claveNueva;
       if (c) await copiarTexto(`${MARCA.textoClave}\n${location.origin}${location.pathname}\nUsuario: ${c.correo}\nContraseña temporal: ${c.clave}\nAl entrar, crea tu propia contraseña.`);
+      return;
+    }
+    if (d.eqpest) { S.equipo.pest = d.eqpest; render(); return; }
+    if (d.cxpedir) { S.equipo.confirmarCx = { id: d.cxid, accion: d.cxpedir }; render(); return; }
+    if (d.cx) {
+      if (d.cx === 'no') { S.equipo.confirmarCx = null; render(); return; }
+      await accionCliente(d.cx, d.cxid);
       return;
     }
     if ('gmesf' in d) { S.ges.mes = S.ges.mes === d.gmesf ? '' : d.gmesf; render(); return; }
@@ -4370,6 +4469,14 @@
       return;
     }
     if (el.dataset && el.dataset.buscar === 'tc') { S.tc.q = el.value; const l = document.getElementById('lista-tc'); if (l) l.innerHTML = filasMovTc(sugerenciasTc()); return; }
+    if (el.dataset && el.dataset.buscar === 'clientes') {
+      S.equipo.filtroCx = el.value;
+      const pos = el.selectionStart;
+      render();
+      const i = document.querySelector('[data-buscar="clientes"]');
+      if (i) { i.focus(); try { i.setSelectionRange(pos, pos); } catch (e) { /* nada */ } }
+      return;
+    }
     if (el.dataset && el.dataset.buscar) {
       if (el.dataset.buscar === 'com') { S.com.q = el.value; const l = document.getElementById('lista-com'); if (l) l.innerHTML = listaComunicados(); }
       if (el.dataset.buscar === 'equipo') {

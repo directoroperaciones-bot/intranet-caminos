@@ -682,6 +682,33 @@ let page;
   // ---------- Informes de gestión ----------
   ok(!(await page.$('.tabs [data-view=gestion]')), 'gestión: una colaboradora no ve los informes de gestión');
   await entrar('andrea.rojas@caminos.example');
+
+  // ---------- Equipo › Clientes de la extranet ----------
+  await ir('equipo');
+  await page.click('[data-eqpest=clientes]');
+  ok(await page.$$eval('.perm.equipo tbody tr', (t) => t.length) === 3, 'extranet: la administración ve los clientes de AppSheet');
+  const filaCx = (txt) => page.locator('.perm.equipo tbody tr', { hasText: txt });
+  ok((await filaCx('Viajes Andinos').textContent()).includes('Falta el correo en AppSheet'), 'extranet: sin correo en AppSheet no se puede crear el acceso');
+  await filaCx('Parroquia San Pedro').locator('[data-cx=crear]').click();
+  await page.waitForSelector('.clave.card');
+  ok(/^[A-Za-z0-9]{10}$/.test((await page.textContent('.clave.card dd.mono')).trim()), 'extranet: crear acceso da una contraseña temporal');
+  ok((await page.textContent('.clave.card')).includes('parroquia.sanpedro@cliente.example'), 'extranet: el usuario es el correo de AppSheet');
+  ok((await page.textContent('.clave.card')).includes('clientes-demo.html'), 'extranet: muestra la dirección del portal');
+  await page.click('[data-accion=cerrarClaveCliente]');
+  ok((await filaCx('Parroquia San Pedro').textContent()).includes('Activo'), 'extranet: la parroquia queda con acceso activo');
+  await filaCx('Ricardo').locator('[data-cxpedir=desactivar]').click();
+  await filaCx('Ricardo').locator('[data-cx=desactivar]').click();
+  ok(await avisa('desactivado'), 'extranet: la administración desactiva un acceso (con confirmación)');
+  await page.waitForFunction(() => [...document.querySelectorAll('.perm.equipo tbody tr')].some((t) => t.textContent.includes('Ricardo') && t.textContent.includes('Desactivado')), null, { timeout: 3000 }).catch(() => null);
+  ok((await filaCx('Ricardo').textContent()).includes('Desactivado'), 'extranet: se ve desactivado');
+  await filaCx('Ricardo').locator('[data-cxpedir=reactivar]').click();
+  await filaCx('Ricardo').locator('[data-cx=reactivar]').click();
+  ok(await avisa('reactivado'), 'extranet: y lo reactiva');
+  await page.waitForFunction(() => [...document.querySelectorAll('.perm.equipo tbody tr')].some((t) => t.textContent.includes('Ricardo') && t.textContent.includes('Activo')), null, { timeout: 3000 }).catch(() => null);
+  await page.fill('[data-buscar=clientes]', 'parro');
+  ok(await page.$$eval('.perm.equipo tbody tr', (t) => t.length) === 1, 'extranet: busca clientes');
+  await page.click('[data-eqpest=equipo]');
+
   await ir('gestion');
   const subKpi = async () => (await page.locator('.gk.hero .gk-s').textContent()).trim();
   const totalTodo = await subKpi();

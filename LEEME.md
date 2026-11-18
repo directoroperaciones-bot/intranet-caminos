@@ -85,10 +85,11 @@ Como Caminos es un cliente nuevo, se fusionaron las del manual (el manual lo per
 | `016_informes_gestion.sql` | Propia: informes de gestión. Resumen de ventas del gestor de reservas (sin datos personales), solo para gerencia; lo escribe el script `informes/Codigo.gs` con su clave |
 | `017_ventas_aplicar.sql` | Propia: `aplicar_ventas(filas)`, la carga del resumen de ventas que usa la tarea diaria de Claude (solo el servidor puede llamarla) |
 | `018_ventas_boton.sql` | Propia: botón «Actualizar» de Gestión. Despierta la tarea de Claude con `pg_net`; la Fire URL y el token van cifrados en Vault; una vez cada 10 minutos |
+| `019_extranet.sql` | Propia: extranet de clientes (`clientes/`). Tablas `clientes_ext`, `ventas_cliente`, `cobros_cliente` y `cuentas_cliente`: cada cliente lee solo sus filas. Carga con `aplicar_extranet`, solo el servidor. Las tablas del equipo que leía cualquier sesión pasan a ser solo del personal activo |
 
 ## 3. Pruebas hechas
 
-- **Permisos en Postgres** (`supabase/pruebas/correr.sh`): 265 reglas en verde (con las 44 de los informes de gestión y su botón, con las 28 de grupos (con la parroquia) y la clave del calendario, las 20 de marcar solo desde la oficina y las 32 de la conciliación de la tarjeta). Marcas solo con `marcar()`, orden de los pasos, bloqueo por IP, malla por sede, supervisor sin poderes de gerencia, comunicados por destinatario, solicitudes por revisor, ausencias aprobadas, `anon` sin acceso.
+- **Permisos en Postgres** (`supabase/pruebas/correr.sh`): 298 reglas en verde (con las 44 de los informes de gestión y su botón, las 33 de la extranet de clientes, con las 28 de grupos (con la parroquia) y la clave del calendario, las 20 de marcar solo desde la oficina y las 32 de la conciliación de la tarjeta). Marcas solo con `marcar()`, orden de los pasos, bloqueo por IP, malla por sede, supervisor sin poderes de gerencia, comunicados por destinatario, solicitudes por revisor, ausencias aprobadas, `anon` sin acceso.
 - **Interfaz** (`pruebas/recorrido.js`): 4 roles × 2 anchos (1300 px y 390 px), cada pestaña (Grupos en tablero y línea de tiempo) sin desborde horizontal y sin errores de página.
 - **Acciones** (`pruebas/acciones.js`): 186 verificaciones (incluye los filtros cruzados del tablero de gestión, recuperar contraseña, la pestaña Oficina, los gastos y la conciliación de la tarjeta y crear, mover, arrastrar, editar y borrar grupos), entre ellas que el informe cuadra con un cálculo manual independiente y que el CSV sale con BOM, `;` y `\r\n`.
 
@@ -145,6 +146,18 @@ Tablero de ventas con los datos del gestor de reservas de AppSheet (la hoja se l
 - **Indicadores:** ventas registradas, efectivas (confirmadas y facturadas), utilidad realizada con margen, conversión, ticket promedio y pasajeros, con la tendencia por mes y la comparación con el mes anterior cuando hay un mes elegido.
 - **Actualizar:** despierta en el momento la tarea de Claude que lee el gestor de reservas. Se conecta una vez en «Conexión con el gestor de reservas».
 - **Exportar a Excel:** baja el detalle filtrado en CSV.
+
+## 3g. Extranet de clientes (portal en `clientes/`)
+
+Los clientes de AppSheet (aliados freelance y parroquias, hoja **CLIENTES**) entran a **`…/intranet-caminos/clientes/`** con su correo y ven **solo sus ventas**: estado, destino, fechas, viajeros (solo nombres), servicios (sin costos), valor, pagos, saldo, su comisión y sus cuentas de cobro. Nunca ven costos, utilidad de Caminos ni proveedores: esos datos ni siquiera llegan a sus tablas.
+
+- **Cómo se le da acceso a un cliente:** en la intranet, **Equipo → Clientes (extranet)** (solo administración) → **Crear acceso**. Usa el correo que el cliente tiene en AppSheet y muestra una contraseña temporal una sola vez, con el mensaje listo para copiar y enviar. Al entrar, el cliente crea la suya. Desde ahí también se da una contraseña nueva y se desactiva o reactiva el acceso.
+- **Si un cliente no tiene correo en AppSheet**, no se puede crear su acceso: se agrega el correo en la hoja CLIENTES y se toca «Actualizar» en Gestión.
+- **Sus ventas** son las que en PIPELINE tienen su `ID_Cliente`.
+- **Comisión:** `% terrestre × valor de los servicios «Plan Terrestre» + % TA × Total TA`, solo en ventas confirmadas o facturadas. Los porcentajes salen de CLIENTES (`Pct_Comision_Terrestre`, `Part_TA_Aliado`); si la venta trae los suyos (`Pct_Comision_Terrestre_Venta`, `Part_TA_Venta`), mandan esos. Si el cliente no tiene porcentajes, el portal no muestra comisión.
+- **Datos al día:** la misma tarea de Claude de las 6 a. m., y el botón «Actualizar» de Gestión, traen también los datos de la extranet.
+- **Cuentas creadas** por la Edge Function `crear-cliente` (solo administración). Una cuenta de cliente no ve nada del equipo: las tablas del equipo exigen ser personal activo. Si un cliente entra por error a la intranet, se le indica su portal.
+- **Pruebas:** `node pruebas/clientes.js` (portal) y la parte «extranet» de `pruebas/acciones.js`. Demostración: `pruebas/clientes-demo.html`.
 
 ## 3e. Que el servidor no se apague
 

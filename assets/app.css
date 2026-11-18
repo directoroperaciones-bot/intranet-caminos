@@ -1017,3 +1017,10 @@ button.gbar-r:hover, .gbar-r[aria-pressed="true"] { background: var(--hueso); }
 .gcon-mini span .i { width: 13px; height: 13px; color: var(--ok); vertical-align: -2px; margin-right: 2px; }
 .gcon-mini > button > .i { width: 15px; height: 15px; flex: none; }
 .gcon-mini em { font-style: normal; font-weight: 600; color: var(--coral); white-space: nowrap; }
+
+/* Equipo › Clientes de la extranet */
+.eq-pest { flex: none; }
+.cx-adm-intro { margin-bottom: 16px; }
+.cx-adm-intro p { margin: 0; font-size: 14px; color: var(--texto); }
+.cx-estado { display: flex; flex-direction: column; align-items: flex-start; gap: 3px; }
+.cx-estado small { font-size: 11.5px; }
