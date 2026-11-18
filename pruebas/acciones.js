@@ -20,6 +20,7 @@ let page;
   await page.clock.resume();
   const errores = [];
   page.on('pageerror', (e) => errores.push(e.message));
+  const sumarDiasT = (iso, n) => new Date(Date.parse(iso + 'T12:00:00Z') + n * 864e5).toISOString().slice(0, 10);
   const esperar = () => page.waitForFunction(() => !document.querySelector('.cargando') && !document.querySelector('[aria-busy="true"]'));
   // Espera un aviso que contenga el texto (los avisos anteriores pueden seguir visibles)
   const avisa = (txt) => page.waitForFunction((t) => { const e = document.querySelector('#toast.show'); return !!e && e.textContent.includes(t); }, txt, { timeout: 5000 }).then(() => true, () => false);
@@ -256,8 +257,9 @@ let page;
   // ---------- Gerencia: informes, módulo, cuentas ----------
   await entrar('andrea.rojas@caminos.example'); // arranca con primer ingreso: entrar() completa clave y datos
   await ir('informes');
-  const meses = await page.$$eval('select[data-inf=mes] option', (os) => os.map((o) => o.value));
-  await page.selectOption('select[data-inf=mes]', meses[1]);
+  const meses = await page.$$eval('select[data-inf=rango] optgroup[label=Meses] option', (os) => os.map((o) => o.value));
+  ok(meses.length === 12 && meses[0].startsWith('m:'), 'informes: el periodo ofrece los últimos 12 meses');
+  await page.selectOption('select[data-inf=rango]', meses[1]);
   await esperar();
   await page.waitForSelector('table.rep tbody tr');
   const filas = (await page.$$('table.rep tbody tr')).length;
@@ -268,16 +270,16 @@ let page;
   const kpiTarde = await page.$$eval('.kpis.six .kpi small', (s) => s[1].textContent);
   ok(kpiTarde.startsWith(minTarde + ' min'), `informes: los minutos tarde de la tabla suman el indicador (${minTarde})`);
   // Cálculo manual independiente, directo de los datos sembrados
-  const manual = await page.evaluate((mes) => {
+  const calcManual = (desde, hasta) => page.evaluate(([desde, hasta]) => {
     const db = window.SUPABASE_DEMO.db;
     const toMin = (t) => +t.slice(0, 2) * 60 + +t.slice(3, 5);
     const dow = (f) => { const g = new Date(f + 'T12:00:00Z').getUTCDay(); return g || 7; };
     const inicio = db.configuracion.find((c) => c.clave === 'inicio_horarios').valor.fecha;
-    const dias = new Date(Date.UTC(+mes.slice(0, 4), +mes.slice(5, 7), 0)).getUTCDate();
+    const fechas = [];
+    for (let d = new Date(desde + 'T12:00:00Z'); d.toISOString().slice(0, 10) <= hasta; d.setUTCDate(d.getUTCDate() + 1)) fechas.push(d.toISOString().slice(0, 10));
     let jornadas = 0, tardes = 0, min = 0, sinMarcar = 0;
     for (const p of db.perfiles) {
-      for (let d = 1; d <= dias; d++) {
-        const f = `${mes}-${String(d).padStart(2, '0')}`;
+      for (const f of fechas) {
         if (f < inicio) continue;
         const cambio = db.malla.find((m) => m.persona_id === p.id && m.fecha === f);
         let tid;
@@ -300,7 +302,10 @@ let page;
       }
     }
     return { jornadas, tardes, min, sinMarcar, punt: ((jornadas - tardes) / jornadas * 100).toFixed(1).replace('.', ',') + ' %' };
-  }, meses[1]);
+  }, [desde, hasta]);
+  const mesAnt = meses[1].slice(2);
+  const finMes = (m) => new Date(Date.UTC(+m.slice(0, 4), +m.slice(5, 7), 0)).toISOString().slice(0, 10);
+  const manual = await calcManual(mesAnt + '-01', finMes(mesAnt));
   const kpis = await page.$$eval('.kpis.six .kpi', (ks) => ks.map((k) => k.querySelector('b').textContent.trim()));
   ok(punt === manual.punt && kpis[1] === String(manual.tardes) && kpis[4] === String(manual.sinMarcar) && minTarde === manual.min,
     `informes: cuadra con el cálculo manual (${manual.jornadas} jornadas, ${manual.tardes} tardes, ${manual.min} min, ${manual.sinMarcar} sin marcar, ${manual.punt})`);
@@ -315,6 +320,47 @@ let page;
   const ruta = await descarga.path();
   const csv = require('fs').readFileSync(ruta, 'utf8');
   ok(csv.charCodeAt(0) === 0xFEFF && csv.includes('Persona;Correo;Sede;Área;Jornadas') && csv.includes('\r\n'), `informes: CSV con BOM, «;» y \\r\\n (${descarga.suggestedFilename()})`);
+  ok(descarga.suggestedFilename() === `asistencia-${mesAnt}-01_a_${finMes(mesAnt)}.csv` && csv.includes(`Desde;${mesAnt}-01;Hasta;${finMes(mesAnt)}`), 'informes: el CSV lleva el periodo en el nombre y en el encabezado');
+
+  // Rango de fechas libre: del 10 del mes anterior al 9 del mes actual (o hasta ayer)
+  const hoyDemo = await page.evaluate(() => { const p = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Bogota', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date()); return p; });
+  const ayerDemo = new Date(Date.parse(hoyDemo + 'T12:00:00Z') - 864e5).toISOString().slice(0, 10);
+  const r1 = mesAnt + '-10', r2 = (hoyDemo.slice(0, 7) + '-09') < ayerDemo ? hoyDemo.slice(0, 7) + '-09' : ayerDemo;
+  await page.fill('input[data-inf=desde]', r1);
+  await esperar();
+  await page.fill('input[data-inf=hasta]', r2);
+  await esperar();
+  await page.waitForFunction(() => document.querySelector('h1') && /Informe del/.test(document.querySelector('h1').textContent));
+  ok(await page.$eval('select[data-inf=rango]', (s) => s.value) === 'libre', 'informes: con fechas libres el periodo dice «Fechas personalizadas»');
+  ok((await page.textContent('h1')).includes('al'), `informes: el título nombra el rango (${(await page.textContent('h1')).trim()})`);
+  const manualR = await calcManual(r1, r2);
+  const kpisR = await page.$$eval('.kpis.six .kpi', (ks) => ks.map((k) => k.querySelector('b').textContent.trim()));
+  const puntR = await page.textContent('.kpi.hero b');
+  ok(puntR === manualR.punt && kpisR[1] === String(manualR.tardes) && kpisR[4] === String(manualR.sinMarcar),
+    `informes: el rango libre cuadra con el cálculo manual (${r1} a ${r2}: ${manualR.jornadas} jornadas, ${manualR.tardes} tardes, ${manualR.punt})`);
+  await page.fill('input[data-inf=desde]', sumarDiasT(r2, 3));
+  await esperar();
+  ok(await page.$eval('input[data-inf=hasta]', (i) => i.value) === sumarDiasT(r2, 3), 'informes: si «desde» pasa a «hasta», corre «hasta»');
+  const [descDet] = await Promise.all([page.waitForEvent('download'), page.click('[data-accion=exportarDetalle]')]);
+  await page.selectOption('select[data-inf=rango]', meses[1]);
+  await esperar();
+  await page.waitForSelector('table.rep tbody tr');
+  const [descDet2] = await Promise.all([page.waitForEvent('download'), page.click('[data-accion=exportarDetalle]')]);
+  const det = require('fs').readFileSync(await descDet2.path(), 'utf8').split('\r\n').filter(Boolean);
+  const cabDet = det.findIndex((l) => l.startsWith('Fecha;Día;Persona'));
+  ok(cabDet > 0 && det.length - cabDet - 1 === (await page.$$eval('table.rep tbody tr', (trs) => trs.reduce((a, t) => a + +t.children[1].textContent + +t.children[7].textContent + +t.children[8].textContent, 0))),
+    `informes: el detalle por día trae una fila por jornada (${det.length - cabDet - 1} filas, ${descDet.suggestedFilename()})`);
+  ok(det.some((l) => /;Tarde \d+ min/.test(l)) && det.some((l) => l.endsWith(';Al día')), 'informes: el detalle marca novedades y días al día');
+  await page.selectOption('select[data-inf=rango]', 'd90');
+  await esperar();
+  await page.waitForSelector('.chartbox svg');
+  ok((await page.textContent('.grid-rep h2')).includes('por semana'), 'informes: en 90 días la gráfica agrupa por semana');
+  await page.hover('.chartbox rect.hit >> nth=-2');
+  ok(await page.isVisible('#tip'), 'informes: tooltip por semana');
+  await page.selectOption('select[data-inf=rango]', 'anio');
+  await esperar();
+  await page.waitForSelector('.chartbox svg');
+  ok((await page.textContent('.grid-rep h2')).includes('por mes') && (await page.textContent('h1')).includes('año'), 'informes: el año agrupa por mes');
 
   await ir('solicitudes');
   await page.click('[data-accion=moduloSol]');

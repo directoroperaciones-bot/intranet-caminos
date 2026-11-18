@@ -333,6 +333,7 @@ table.perm tr.fija > * { background: var(--hueso); color: var(--pizarra); font-w
 
 /* ---------- Informes ---------- */
 .filters { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
+.inf-fechas { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
 .kpis.six { grid-template-columns: minmax(0, 1.25fr) repeat(3, minmax(0, 1fr)); grid-template-rows: auto auto; }
 .kpi.hero { grid-row: span 2; justify-content: center; gap: 8px; padding: 22px 24px; }
 .kpi.hero > span { font: 600 12px/1.3 var(--fuente); letter-spacing: .14em; text-transform: uppercase; color: var(--pizarra); }
@@ -533,6 +534,8 @@ tr.inactiva > * { opacity: .55; }
   .field.inline { flex-wrap: nowrap; width: 100%; }
   .field.inline > span { min-width: 46px; }
   .field.inline select { min-width: 0; flex: 1 1 auto; }
+  .inf-fechas { width: 100%; flex-direction: column; align-items: stretch; }
+  .field.inline input[type=date] { min-width: 0; flex: 1 1 auto; }
   .filters .btn { width: 100%; }
   .rank button { grid-template-columns: minmax(0, 1fr) auto; }
   .rank-bar { grid-column: 1 / -1; grid-row: 2; }

@@ -2,7 +2,7 @@
 
 Intranet del equipo de Caminos, construida con el *Manual técnico · Intranet corporativa (versión final)* y con el sistema de diseño de Caminos (el mismo de Caminos Documentos: coral `#F25061`, Poppins, logo con la estrella, fondo hueso, botones con radio 10).
 
-**Qué trae:** acceso con correo corporativo y contraseña, **grupos de viaje** (tablero de cinco columnas, línea de tiempo y calendario compartido de Google), pase de jornada para marcar asistencia, malla de horarios (horario fijo + cambios puntuales + turnos), comunicados con confirmación de lectura, asistencia del día, informe mensual de gerencia con exportación a Excel, solicitudes de vacaciones, permisos e incapacidades, administración de cuentas y una guía de uso según el rol.
+**Qué trae:** acceso con correo corporativo y contraseña, **grupos de viaje** (tablero de cinco columnas, línea de tiempo y calendario compartido de Google), pase de jornada para marcar asistencia, malla de horarios (horario fijo + cambios puntuales + turnos), comunicados con confirmación de lectura, asistencia del día, informe de asistencia de gerencia por rango de fechas (mes, trimestre, año, últimos días o fechas libres) con exportación a Excel del resumen y del detalle por día, solicitudes de vacaciones, permisos e incapacidades, administración de cuentas y una guía de uso según el rol.
 
 **Accesos a las herramientas (tarjetas en Inicio):**
 
@@ -92,7 +92,7 @@ Como Caminos es un cliente nuevo, se fusionaron las del manual (el manual lo per
 
 - **Permisos en Postgres** (`supabase/pruebas/correr.sh`): 321 reglas en verde (con las 23 de las cuentas de cobro, con las 44 de los informes de gestión y su botón, las 33 de la extranet de clientes, con las 28 de grupos (con la parroquia) y la clave del calendario, las 20 de marcar solo desde la oficina y las 32 de la conciliación de la tarjeta). Marcas solo con `marcar()`, orden de los pasos, bloqueo por IP, malla por sede, supervisor sin poderes de gerencia, comunicados por destinatario, solicitudes por revisor, ausencias aprobadas, `anon` sin acceso.
 - **Interfaz** (`pruebas/recorrido.js`): 4 roles × 2 anchos (1300 px y 390 px), cada pestaña (Grupos en tablero y línea de tiempo) sin desborde horizontal y sin errores de página.
-- **Acciones** (`pruebas/acciones.js`): 186 verificaciones (incluye los filtros cruzados del tablero de gestión, recuperar contraseña, la pestaña Oficina, los gastos y la conciliación de la tarjeta y crear, mover, arrastrar, editar y borrar grupos), entre ellas que el informe cuadra con un cálculo manual independiente y que el CSV sale con BOM, `;` y `\r\n`.
+- **Acciones** (`pruebas/acciones.js`): 221 verificaciones (incluye el informe de asistencia por rango de fechas y su detalle por día, los filtros cruzados del tablero de gestión, recuperar contraseña, la pestaña Oficina, los gastos y la conciliación de la tarjeta y crear, mover, arrastrar, editar y borrar grupos), entre ellas que el informe cuadra con un cálculo manual independiente y que el CSV sale con BOM, `;` y `\r\n`.
 
 ```bash
 # Postgres local (usuario postgres)

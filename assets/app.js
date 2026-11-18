@@ -173,7 +173,7 @@
     turnoSede: null,
     asistencia: null, asisSede: 'todas',
     equipo: { claveNueva: null, filtro: '', confirmar: null, borrador: {} },
-    inf: { mes: '', sede: 'todas', area: 'todas', orden: { col: 'minTarde', asc: false }, sel: null, datos: null },
+    inf: { rango: '', desde: '', hasta: '', sede: 'todas', area: 'todas', orden: { col: 'minTarde', asc: false }, sel: null, datos: null },
     com: { lista: [], imgs: [], lect: [], filtro: 'todos', q: '', borrador: { confirmar: true }, archivos: [], borrar: null },
     lb: null,
     sol: { lista: [], adj: [], tipo: 'vacaciones', borrador: {}, archivos: [], cancelar: null, coment: {} },
@@ -430,7 +430,7 @@
       com: { lista: [], imgs: [], lect: [], filtro: 'todos', q: '', borrador: { confirmar: true }, archivos: [], borrar: null },
       sol: { lista: [], adj: [], tipo: 'vacaciones', borrador: {}, archivos: [], cancelar: null, coment: {} },
       equipo: { claveNueva: null, filtro: '', confirmar: null, borrador: {} },
-      inf: { mes: '', sede: 'todas', area: 'todas', orden: { col: 'minTarde', asc: false }, sel: null, datos: null },
+      inf: { rango: '', desde: '', hasta: '', sede: 'todas', area: 'todas', orden: { col: 'minTarde', asc: false }, sel: null, datos: null },
     });
     try { history.replaceState(null, '', location.pathname + location.search); } catch (e) { /* nada */ }
     render();
@@ -1583,7 +1583,7 @@
     });
   }
 
-  // ---------- Informes mensuales (panel de gerencia) ----------
+  // ---------- Informes de asistencia por periodo (panel de gerencia) ----------
   function mesesDisponibles() {
     const hoy = fechaEn(miTz());
     let y = +hoy.slice(0, 4), m = +hoy.slice(5, 7);
@@ -1595,22 +1595,57 @@
     return out;
   }
 
+  // Rango del informe: atajos (últimos días, trimestres, año, meses) o fechas libres.
+  const MAX_DIAS_INFORME = 366;
+  function rangosInforme() {
+    const hoy = fechaEn(miTz()), ayer = sumarDias(hoy, -1);
+    const y = +hoy.slice(0, 4), t = Math.floor((+hoy.slice(5, 7) - 1) / 3);
+    const trim = (yy, tt) => { const m = `${yy}-${String(tt * 3 + 1).padStart(2, '0')}`; return [m + '-01', ultimoDia(`${yy}-${String(tt * 3 + 3).padStart(2, '0')}`)]; };
+    const tAnt = t === 0 ? trim(y - 1, 3) : trim(y, t - 1);
+    const fijos = [
+      { id: 'd7', nombre: 'Últimos 7 días', desde: sumarDias(ayer, -6), hasta: ayer },
+      { id: 'd30', nombre: 'Últimos 30 días', desde: sumarDias(ayer, -29), hasta: ayer },
+      { id: 'd90', nombre: 'Últimos 90 días', desde: sumarDias(ayer, -89), hasta: ayer },
+      { id: 'trim', nombre: 'Este trimestre', desde: trim(y, t)[0], hasta: trim(y, t)[1] },
+      { id: 'trimant', nombre: 'Trimestre anterior', desde: tAnt[0], hasta: tAnt[1] },
+      { id: 'anio', nombre: `Este año (${y})`, desde: `${y}-01-01`, hasta: `${y}-12-31` },
+      { id: 'anioant', nombre: `Año ${y - 1}`, desde: `${y - 1}-01-01`, hasta: `${y - 1}-12-31` },
+    ];
+    const meses = mesesDisponibles().map((m) => ({ id: 'm:' + m, nombre: mesLargo(m), desde: m + '-01', hasta: ultimoDia(m) }));
+    return { fijos, meses, todos: fijos.concat(meses) };
+  }
+  function ponerRango(I, id) {
+    const r = rangosInforme().todos.find((x) => x.id === id);
+    if (r) { I.rango = r.id; I.desde = r.desde; I.hasta = r.hasta; }
+  }
+  // Nombre legible del periodo: «noviembre 2026», «año 2025» o «3 nov al 21 dic 2026».
+  function etiquetaRango(desde, hasta) {
+    if (desde.slice(0, 7) === hasta.slice(0, 7) && desde.endsWith('-01') && hasta === ultimoDia(hasta.slice(0, 7))) return nombreMes(desde.slice(0, 7));
+    if (desde.slice(0, 4) === hasta.slice(0, 4) && desde.endsWith('-01-01') && hasta.endsWith('-12-31')) return 'año ' + desde.slice(0, 4);
+    if (desde === hasta) return `${fechaCorta(desde)} ${desde.slice(0, 4)}`;
+    return desde.slice(0, 4) === hasta.slice(0, 4)
+      ? `${fechaCorta(desde)} al ${fechaCorta(hasta)} ${hasta.slice(0, 4)}`
+      : `${fechaCorta(desde)} ${desde.slice(0, 4)} al ${fechaCorta(hasta)} ${hasta.slice(0, 4)}`;
+  }
+
   async function cargarInforme() {
     const I = S.inf;
-    if (!I.mes) { const ms = mesesDisponibles(); I.mes = +fechaEn(miTz()).slice(8, 10) <= 5 ? ms[1] : ms[0]; }
-    const mes = I.mes;
+    if (!I.desde || !I.hasta) {
+      const ms = mesesDisponibles();
+      ponerRango(I, 'm:' + (+fechaEn(miTz()).slice(8, 10) <= 5 ? ms[1] : ms[0]));
+    }
     if (P().rol === 'directora' && !esGerencia()) I.sede = P().sede_id;
-    const desde = I.mes + '-01', hasta = ultimoDia(I.mes);
+    const { desde, hasta } = I;
     const [malla, marcas, ausencias, coms] = await Promise.all([
       mallaEfectiva(desde, hasta),
       todas(() => sb.from('marcas').select('*').gte('fecha', desde).lte('fecha', hasta).order('id')),
       q(sb.rpc('ausencias_aprobadas', { p_desde: desde, p_hasta: hasta })),
-      q(sb.from('comunicados').select('*').gte('creado', desde + 'T00:00:00').lte('creado', sumarDias(hasta, 1) + 'T00:00:00').order('creado')),
+      q(sb.from('comunicados').select('*').gte('creado', sumarDias(desde, -1) + 'T00:00:00').lte('creado', sumarDias(hasta, 2) + 'T00:00:00').order('creado')),
     ]);
-    const enMes = coms.filter((c) => fechaEn(miTz(), new Date(c.creado)).slice(0, 7) === I.mes);
-    const lect = enMes.length ? await todas(() => sb.from('comunicado_lecturas').select('*').in('comunicado_id', enMes.map((c) => c.id)).order('comunicado_id')) : [];
-    if (S.inf !== I || I.mes !== mes) return; // llegó tarde: ya se pidió otro mes
-    I.datos = { desde, hasta, malla, marcas, ausencias, coms: enMes, lect };
+    const enRango = coms.filter((c) => { const f = fechaEn(miTz(), new Date(c.creado)); return f >= desde && f <= hasta; });
+    const lect = enRango.length ? await todas(() => sb.from('comunicado_lecturas').select('*').in('comunicado_id', enRango.map((c) => c.id)).order('comunicado_id')) : [];
+    if (S.inf !== I || I.desde !== desde || I.hasta !== hasta) return; // llegó tarde: ya se pidió otro periodo
+    I.datos = { desde, hasta, malla, marcas, ausencias, coms: enRango, lect };
   }
 
   function calcularInforme() {
@@ -1623,33 +1658,39 @@
     const porDia = {};
     const filas = personas.map((p) => {
       const tz = tzSede(p.sede_id), hoy = fechaEn(tz);
-      const r = { p, jornadas: 0, tardes: 0, minTarde: 0, almLargos: 0, salidasAntes: 0, extraMin: 0, sinMarcar: 0, conPermiso: 0, comSin: 0, dias: [] };
+      const r = { p, jornadas: 0, tardes: 0, minTarde: 0, almLargos: 0, salidasAntes: 0, extraMin: 0, sinMarcar: 0, conPermiso: 0, comSin: 0, dias: [], registro: [] };
       D.malla.filter((f) => f.persona_id === p.id && f.fecha < hoy).forEach((f) => {
         const t = turno(f.turno_id);
         if (!conHorario(t)) return;
+        // Una línea por jornada para el detalle exportable
+        const reg = { fecha: f.fecha, turno: t.nombre, entProg: hhmm(t.entrada), ent: '', tarde: 0, alm: '', salProg: hhmm(t.salida), sal: '', difSal: '', novedad: [] };
+        r.registro.push(reg);
         const aus = D.ausencias.find((a) => a.persona_id === p.id && a.desde <= f.fecha && a.hasta >= f.fecha);
-        if (aus) { r.conPermiso++; r.dias.push({ fecha: f.fecha, txt: TIPOS[aus.tipo].estado, cls: 'info' }); return; }
+        if (aus) { r.conPermiso++; r.dias.push({ fecha: f.fecha, txt: TIPOS[aus.tipo].estado, cls: 'info' }); reg.novedad.push(TIPOS[aus.tipo].estado); return; }
         const m = (tipo) => marcas[p.id + '|' + f.fecha + '|' + tipo];
         const ent = m('entrada');
-        if (!ent) { r.sinMarcar++; r.dias.push({ fecha: f.fecha, txt: 'Sin marcar', cls: 'bad' }); return; }
+        if (!ent) { r.sinMarcar++; r.dias.push({ fecha: f.fecha, txt: 'Sin marcar', cls: 'bad' }); reg.novedad.push('Sin marcar entrada'); return; }
         r.jornadas++;
+        reg.ent = horaDe(ent.hora, tz);
         const tarde = minDe(ent.hora, tz) - toMin(t.entrada);
         if (tarde > tl.entrada) {
-          r.tardes++; r.minTarde += tarde;
+          r.tardes++; r.minTarde += tarde; reg.tarde = tarde; reg.novedad.push(`Tarde ${tarde} min`);
           r.dias.push({ fecha: f.fecha, txt: `Tarde ${tarde} min`, cls: 'bad' });
           (porDia[f.fecha] = porDia[f.fecha] || []).push({ nombre: p.nombre, min: tarde });
         }
-        const alm = m('salida_almuerzo'), reg = m('regreso_almuerzo');
-        if (alm && reg && conAlmuerzo(t)) {
-          const dur = minDe(reg.hora, tz) - minDe(alm.hora, tz);
-          if (dur > toMin(t.regreso_almuerzo) - toMin(t.salida_almuerzo) + tl.almuerzo) { r.almLargos++; r.dias.push({ fecha: f.fecha, txt: `Almuerzo ${dur} min`, cls: 'warn' }); }
+        const alm = m('salida_almuerzo'), reg2 = m('regreso_almuerzo');
+        if (alm && reg2 && conAlmuerzo(t)) {
+          const dur = minDe(reg2.hora, tz) - minDe(alm.hora, tz);
+          reg.alm = dur;
+          if (dur > toMin(t.regreso_almuerzo) - toMin(t.salida_almuerzo) + tl.almuerzo) { r.almLargos++; r.dias.push({ fecha: f.fecha, txt: `Almuerzo ${dur} min`, cls: 'warn' }); reg.novedad.push(`Almuerzo ${dur} min`); }
         }
         const sal = m('salida');
         if (sal) {
           const d = minDe(sal.hora, tz) - toMin(t.salida);
-          if (d < 0) { r.salidasAntes++; r.dias.push({ fecha: f.fecha, txt: `Salió ${-d} min antes`, cls: 'warn' }); }
-          if (d >= 30) { r.extraMin += d; r.dias.push({ fecha: f.fecha, txt: `${d} min extra`, cls: 'info' }); }
-        }
+          reg.sal = horaDe(sal.hora, tz); reg.difSal = d;
+          if (d < 0) { r.salidasAntes++; r.dias.push({ fecha: f.fecha, txt: `Salió ${-d} min antes`, cls: 'warn' }); reg.novedad.push(`Salió ${-d} min antes`); }
+          if (d >= 30) { r.extraMin += d; r.dias.push({ fecha: f.fecha, txt: `${d} min extra`, cls: 'info' }); reg.novedad.push(`${d} min extra`); }
+        } else reg.novedad.push('Sin marcar salida');
       });
       r.comSin = D.coms.filter((c) => c.requiere_confirmacion && destinatarios(c).some((x) => x.id === p.id) && !D.lect.some((l) => l.comunicado_id === c.id && l.persona_id === p.id)).length;
       r.puntualidad = r.jornadas ? ((r.jornadas - r.tardes) / r.jornadas) * 100 : null;
@@ -1666,27 +1707,63 @@
 
   const pct1 = (v) => (v == null ? '—' : `${v.toFixed(1).replace('.', ',')} %`);
 
+  // Tramos de la gráfica según el largo del periodo: por día (hasta 2 meses), por semana (hasta ~6 meses) o por mes.
+  function tramosInforme(desde, hasta) {
+    const n = diasEntre(desde, hasta) + 1;
+    const out = [];
+    if (n <= 62) {
+      let prevMes = '';
+      for (let d = desde; d <= hasta; d = sumarDias(d, 1)) {
+        const marca = d === desde || diaSemana(d) === 1;
+        out.push({ desde: d, hasta: d, txt: marca ? (d.slice(0, 7) !== prevMes ? fechaCorta(d) : String(+d.slice(8, 10))) : '' });
+        if (marca) prevMes = d.slice(0, 7);
+      }
+      return { por: 'día', tramos: out, hint: 'Etiquetas: el primer día y cada lunes.' };
+    }
+    if (n <= 190) {
+      const cada = n <= 120 ? 2 : 3;
+      for (let d = lunesDe(desde), i = 0; d <= hasta; d = sumarDias(d, 7), i++) {
+        const a = d < desde ? desde : d, z = sumarDias(d, 6) > hasta ? hasta : sumarDias(d, 6);
+        out.push({ desde: a, hasta: z, txt: i % cada === 0 ? fechaCorta(a) : '' });
+      }
+      return { por: 'semana', tramos: out, hint: 'Cada barra es una semana (de lunes a domingo).' };
+    }
+    for (let m = desde.slice(0, 7); m <= hasta.slice(0, 7); m = sumarDias(ultimoDia(m), 1).slice(0, 7)) {
+      const a = m + '-01' < desde ? desde : m + '-01', z = ultimoDia(m) > hasta ? hasta : ultimoDia(m);
+      out.push({ desde: a, hasta: z, txt: MESES[+m.slice(5, 7) - 1].slice(0, 3) });
+    }
+    return { por: 'mes', tramos: out, hint: 'Cada barra es un mes.' };
+  }
+  function tardesEn(porDia, desde, hasta) {
+    let n = 0;
+    Object.keys(porDia).forEach((d) => { if (d >= desde && d <= hasta) n += porDia[d].length; });
+    return n;
+  }
+
   function graficaDias(porDia) {
-    const I = S.inf, desde = I.mes + '-01', hasta = ultimoDia(I.mes);
-    const dias = [];
-    for (let d = desde; d <= hasta; d = sumarDias(d, 1)) dias.push(d);
-    const vals = dias.map((d) => (porDia[d] || []).length);
+    const I = S.inf, G = tramosInforme(I.desde, I.hasta), tr = G.tramos;
+    const vals = tr.map((x) => tardesEn(porDia, x.desde, x.hasta));
     const max = Math.max(0, ...vals);
-    const paso = max <= 5 ? 1 : max <= 10 ? 2 : 5;
+    const paso = max <= 5 ? 1 : max <= 10 ? 2 : max <= 25 ? 5 : max <= 50 ? 10 : max <= 125 ? 25 : 50;
     const tope = Math.max(paso, Math.ceil(max / paso) * paso);
     const W = 720, H = 220, L = 32, R = 8, T = 12, B = 30;
-    const bw = (W - L - R) / dias.length;
+    const bw = (W - L - R) / tr.length;
     const y = (v) => T + (H - T - B) * (1 - v / tope);
     let svg = '';
     for (let v = 0; v <= tope; v += paso) svg += `<line x1="${L}" x2="${W - R}" y1="${y(v)}" y2="${y(v)}" class="g"/><text x="${L - 6}" y="${y(v) + 4}" text-anchor="end" class="t">${v}</text>`;
-    dias.forEach((d, i) => {
-      const v = vals[i], x = L + i * bw;
-      if (v) svg += `<rect x="${x + bw * 0.18}" y="${y(v)}" width="${bw * 0.64}" height="${y(0) - y(v)}" rx="2" class="b" data-dia="${d}"/>`;
-      svg += `<rect x="${x}" y="${T}" width="${bw}" height="${H - T - B}" class="hit" data-dia="${d}"/>`;
-      if (i === 0 || diaSemana(d) === 1) svg += `<text x="${x + bw / 2}" y="${H - 10}" text-anchor="middle" class="t">${+d.slice(8, 10)}</text>`;
+    tr.forEach((x0, i) => {
+      const v = vals[i], x = L + i * bw, rango = `data-dia="${x0.desde}" data-hasta="${x0.hasta}"`;
+      if (v) svg += `<rect x="${x + bw * 0.18}" y="${y(v)}" width="${bw * 0.64}" height="${y(0) - y(v)}" rx="2" class="b" ${rango}/>`;
+      svg += `<rect x="${x}" y="${T}" width="${bw}" height="${H - T - B}" class="hit" ${rango}/>`;
+      if (x0.txt) svg += `<text x="${x + bw / 2}" y="${H - 10}" text-anchor="middle" class="t">${esc(x0.txt)}</text>`;
     });
-    return `<div class="chartbox"><svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Llegadas tarde por día en ${esc(nombreMes(I.mes))}, máximo ${max}">${svg}</svg><div class="tip" id="tip" hidden></div></div>
-      <p class="hint">Días marcados: el 1 y cada lunes. Pasa el cursor sobre un día para ver quién llegó tarde.</p>`;
+    return `<div class="chartbox"><svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Llegadas tarde por ${G.por}, ${esc(etiquetaRango(I.desde, I.hasta))}, máximo ${max}">${svg}</svg><div class="tip" id="tip" hidden></div></div>
+      <p class="hint">${G.hint} Pasa el cursor sobre una barra para ver quién llegó tarde.</p>`;
+  }
+
+  function opcionesRango(sel) {
+    const R = rangosInforme(), o = (r) => `<option value="${r.id}"${r.id === sel ? ' selected' : ''}>${esc(r.nombre)}</option>`;
+    return `${sel === 'libre' ? '<option value="libre" selected>Fechas personalizadas</option>' : ''}<optgroup label="Rápidos">${R.fijos.map(o).join('')}</optgroup><optgroup label="Meses">${R.meses.map(o).join('')}</optgroup>`;
   }
 
   function informesView() {
@@ -1697,12 +1774,19 @@
     const sedes = S.sedes.filter((s) => lideraSede(s.id));
     const directora = P().rol === 'directora' && !esGerencia();
     const filtros = `<div class="filters">
-        <label class="field inline"><span>Mes</span><select data-inf="mes">${mesesDisponibles().map((x) => `<option value="${x}"${x === I.mes ? ' selected' : ''}>${esc(nombreMes(x))}</option>`).join('')}</select></label>
+        <label class="field inline"><span>Periodo</span><select data-inf="rango">${opcionesRango(I.rango)}</select></label>
+        <span class="inf-fechas"><label class="field inline"><span>Desde</span><input type="date" data-inf="desde" value="${esc(I.desde)}" max="${esc(I.hasta)}"></label>
+        <label class="field inline"><span>Hasta</span><input type="date" data-inf="hasta" value="${esc(I.hasta)}" min="${esc(I.desde)}"></label></span>
         ${variasSedes() ? `<label class="field inline"><span>Sede</span><select data-inf="sede"${directora ? ' disabled' : ''}>${directora ? '' : '<option value="todas">Todas</option>'}${sedes.map((s) => `<option value="${s.id}"${String(I.sede) === String(s.id) ? ' selected' : ''}>${esc(s.nombre)}</option>`).join('')}</select></label>` : ''}
         <label class="field inline"><span>Área</span><select data-inf="area"><option value="todas">Todas</option>${S.areas.map((a) => `<option value="${a.id}"${String(I.area) === String(a.id) ? ' selected' : ''}>${esc(a.nombre)}</option>`).join('')}</select></label>
-        <button type="button" class="btn ghost sm" data-accion="exportar">${ico('descargar')}Exportar a Excel</button>
+        <button type="button" class="btn ghost sm" data-accion="exportar">${ico('descargar')}Exportar resumen</button>
+        <button type="button" class="btn ghost sm" data-accion="exportarDetalle">${ico('descargar')}Detalle por día</button>
       </div>`;
-    const cab = encabezado('Panel de gerencia', `Informe de <em>${esc(nombreMes(I.mes))}</em>`, `Solo cuentan días cerrados con turno con horario. Tolerancias: ${tol().entrada} min en la entrada y ${tol().almuerzo} min en el almuerzo.`, filtros);
+    const nDias = diasEntre(I.desde, I.hasta) + 1;
+    const hoyInf = fechaEn(miTz());
+    const enCurso = I.hasta >= hoyInf ? ` Periodo en curso: cuenta hasta ayer (${esc(fechaCorta(sumarDias(hoyInf, -1)))}).` : '';
+    const titulo = /^(\d|año)/.test(etiquetaRango(I.desde, I.hasta)) ? `Informe del <em>${esc(etiquetaRango(I.desde, I.hasta))}</em>` : `Informe de <em>${esc(etiquetaRango(I.desde, I.hasta))}</em>`;
+    const cab = encabezado('Panel de gerencia', titulo, `${plural(nDias, 'día', 'días')} (${esc(fechaCorta(I.desde))} – ${esc(fechaCorta(I.hasta))}). Solo cuentan días cerrados con turno con horario.${enCurso} Tolerancias: ${tol().entrada} min en la entrada y ${tol().almuerzo} min en el almuerzo.`, filtros);
     if (!filas.length) return cab + `<p class="vacio card">No hay jornadas cerradas para estos filtros.</p>`;
     const nivel = tot.puntualidad == null ? 'mute' : tot.puntualidad >= m ? 'ok' : tot.puntualidad >= m - 10 ? 'warn' : 'bad';
     const k = (n, txt, sub) => `<div class="kpi"><b>${n}</b><span>${txt}</span>${sub ? `<small>${sub}</small>` : ''}</div>`;
@@ -1721,10 +1805,10 @@
     const maxR = rank.length ? rank[0].minTarde : 1;
     const sel = I.sel && filas.find((r) => r.p.id === I.sel);
     const ranking = `<section class="card"><div class="sec-h"><h2>¿Quién llegó más tarde?</h2></div>
-        ${rank.length ? `<ol class="rank">${rank.map((r) => `<li><button type="button" data-selinf="${r.p.id}" aria-pressed="${I.sel === r.p.id}"><span class="rank-n">${esc(r.p.nombre)}</span><span class="rank-bar"><span style="width:${(r.minTarde / maxR) * 100}%"></span></span><span class="rank-v">${r.minTarde} min · ${r.tardes}×</span></button></li>`).join('')}</ol>` : '<p class="vacio">Nadie llegó tarde este mes.</p>'}
+        ${rank.length ? `<ol class="rank">${rank.map((r) => `<li><button type="button" data-selinf="${r.p.id}" aria-pressed="${I.sel === r.p.id}"><span class="rank-n">${esc(r.p.nombre)}</span><span class="rank-bar"><span style="width:${(r.minTarde / maxR) * 100}%"></span></span><span class="rank-v">${r.minTarde} min · ${r.tardes}×</span></button></li>`).join('')}</ol>` : '<p class="vacio">Nadie llegó tarde en este periodo.</p>'}
         ${sel ? `<div class="detail"><div class="sec-h"><h3>${esc(sel.p.nombre)}</h3><button type="button" class="btn txt sm" data-selinf="">${ico('x')}Cerrar</button></div>
             <p class="hint">${plural(sel.jornadas, 'jornada', 'jornadas')} · puntualidad ${pct1(sel.puntualidad)} · ${sel.tardes} tardes (${sel.minTarde} min) · ${sel.sinMarcar} sin marcar · ${sel.conPermiso} con permiso</p>
-            ${sel.dias.length ? `<ul class="chips-dia">${sel.dias.map((d) => `<li><small>${esc(fechaCorta(d.fecha))}</small><span class="chip ${d.cls} xs">${esc(d.txt)}</span></li>`).join('')}</ul>` : '<p class="vacio">Sin novedades este mes.</p>'}</div>` : '<p class="hint">Toca un nombre para ver el detalle por día.</p>'}
+            ${sel.dias.length ? `<ul class="chips-dia">${sel.dias.map((d) => `<li><small>${esc(fechaCorta(d.fecha))}</small><span class="chip ${d.cls} xs">${esc(d.txt)}</span></li>`).join('')}</ul>` : '<p class="vacio">Sin novedades en este periodo.</p>'}</div>` : '<p class="hint">Toca un nombre para ver el detalle por día.</p>'}
       </section>`;
     const cols = [['nombre', 'Persona'], ['jornadas', 'Jornadas'], ['tardes', 'Tardes'], ['minTarde', 'Min. tarde'], ['almLargos', 'Alm. largos'], ['salidasAntes', 'Salidas antes'], ['extraMin', 'Extra'], ['sinMarcar', 'Sin marcar'], ['conPermiso', 'Permiso'], ['comSin', 'Sin confirmar'], ['puntualidad', 'Puntualidad']];
     const o = I.orden;
@@ -1757,34 +1841,47 @@
     function personas2(p) { return lideraSede(p.sede_id) && (I.sede === 'todas' || String(p.sede_id) === String(I.sede)) && (I.area === 'todas' || String(p.area_id) === String(I.area)); }
     return cab + kpis
       + `<div class="grid-rep">
-          <section class="card"><div class="sec-h"><h2>Llegadas tarde por día</h2></div>${graficaDias(porDia)}</section>
+          <section class="card"><div class="sec-h"><h2>Llegadas tarde por ${tramosInforme(I.desde, I.hasta).por}</h2></div>${graficaDias(porDia)}</section>
           ${ranking}
         </div>`
       + tabla + conf;
   }
 
-  function exportarInforme() {
+  // Exporta el informe a CSV para Excel. tipo: 'resumen' (una fila por persona) o 'detalle' (una fila por jornada).
+  function exportarInforme(tipo) {
     if (CFG.sinDescargas) { toast('En esta vista previa no se descargan archivos. En la intranet publicada, este botón baja el CSV para Excel.', 'warn'); return; }
     const { filas } = calcularInforme();
-    const cab = ['Persona', 'Correo', 'Sede', 'Área', 'Jornadas', 'Llegadas tarde', 'Minutos tarde', 'Promedio tarde (min)', 'Almuerzos largos', 'Salidas antes', 'Horas extra (min)', 'Sin marcar', 'Con permiso', 'Comunicados sin confirmar', 'Puntualidad %'];
     // Textos que empiezan con = + - @ se anteponen con ' para que Excel no los tome como fórmula
     const celda = (v) => { let s = String(v == null ? '' : v); if (typeof v === 'string' && /^[=+\-@]/.test(s)) s = "'" + s; return /[;"\r\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; };
-    const lineas = [cab.join(';')].concat(filas.map((r) => [
-      r.p.nombre, r.p.correo, (sedeDe(r.p.sede_id) || {}).nombre || '', (areaDe(r.p.area_id) || {}).nombre || '',
-      r.jornadas, r.tardes, r.minTarde, r.tardes ? (r.minTarde / r.tardes).toFixed(1).replace('.', ',') : '0',
-      r.almLargos, r.salidasAntes, r.extraMin, r.sinMarcar, r.conPermiso, r.comSin,
-      r.puntualidad == null ? '' : r.puntualidad.toFixed(1).replace('.', ','),
-    ].map(celda).join(';')));
-    const sede = S.inf.sede !== 'todas' ? '-' + nombreArchivo((sedeDe(+S.inf.sede) || {}).nombre || '') : '';
-    const blob = new Blob(['﻿' + lineas.join('\r\n') + '\r\n'], { type: 'text/csv;charset=utf-8' });
+    const base = (r) => [r.p.nombre, r.p.correo, (sedeDe(r.p.sede_id) || {}).nombre || '', (areaDe(r.p.area_id) || {}).nombre || ''];
+    let cab, datos;
+    if (tipo === 'detalle') {
+      cab = ['Fecha', 'Día', 'Persona', 'Correo', 'Sede', 'Área', 'Turno', 'Entrada programada', 'Entrada marcada', 'Minutos tarde', 'Almuerzo (min)', 'Salida programada', 'Salida marcada', 'Diferencia salida (min)', 'Novedades'];
+      datos = [];
+      filas.forEach((r) => r.registro.forEach((g) => datos.push([g.fecha, DIAS_LARGOS[diaSemana(g.fecha) - 1], ...base(r), g.turno, g.entProg, g.ent, g.tarde || '', g.alm, g.salProg, g.sal, g.difSal, g.novedad.join(' · ') || 'Al día'])));
+      datos.sort((x, y) => (x[0] < y[0] ? -1 : x[0] > y[0] ? 1 : x[2].localeCompare(y[2], 'es')));
+    } else {
+      cab = ['Persona', 'Correo', 'Sede', 'Área', 'Jornadas', 'Llegadas tarde', 'Minutos tarde', 'Promedio tarde (min)', 'Almuerzos largos', 'Salidas antes', 'Horas extra (min)', 'Sin marcar', 'Con permiso', 'Comunicados sin confirmar', 'Puntualidad %'];
+      datos = filas.map((r) => [
+        ...base(r),
+        r.jornadas, r.tardes, r.minTarde, r.tardes ? (r.minTarde / r.tardes).toFixed(1).replace('.', ',') : '0',
+        r.almLargos, r.salidasAntes, r.extraMin, r.sinMarcar, r.conPermiso, r.comSin,
+        r.puntualidad == null ? '' : r.puntualidad.toFixed(1).replace('.', ','),
+      ]);
+    }
+    const I = S.inf;
+    const lineas = [`Periodo;${celda(etiquetaRango(I.desde, I.hasta))};Desde;${I.desde};Hasta;${I.hasta}`, '', cab.join(';')].concat(datos.map((f) => f.map(celda).join(';')));
+    const sede = I.sede !== 'todas' ? '-' + nombreArchivo((sedeDe(+I.sede) || {}).nombre || '') : '';
+    const blob = new Blob(['\ufeff' + lineas.join('\r\n') + '\r\n'], { type: 'text/csv;charset=utf-8' });
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
-    a.download = `asistencia-${S.inf.mes}${sede}.csv`;
+    a.download = `asistencia-${tipo === 'detalle' ? 'detalle-' : ''}${I.desde}_a_${I.hasta}${sede}.csv`;
     document.body.appendChild(a);
     a.click();
     setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
     toast('Archivo descargado. Ábrelo con Excel.');
   }
+
 
   // ---------- Informes de gestión (ventas del gestor de reservas) ----------
   // Las ventas llegan resumidas desde la hoja de AppSheet (informes/Codigo.gs).
@@ -3604,7 +3701,7 @@
           <li><b>Malla:</b> carga una vez el <b>horario fijo</b> de cada persona; la malla de cada semana se llena sola. Para un día distinto (un festivo, un cambio) toca la celda en «Semana». «↺ Volver al horario fijo» deshace el cambio.</li>
           <li><b>Turnos:</b> son las franjas de horario. Si cambias sus horas, cambian para todas las personas que lo tienen, también hacia atrás en los informes.</li>
           <li><b>Asistencia:</b> quién está trabajando hoy comparado con la malla. Toca «Actualizar» para ver lo último.</li>
-          <li><b>Informes:</b> puntualidad del mes, llegadas tarde por día, quién llegó más tarde y detalle por persona. «Exportar a Excel» descarga la tabla.</li>
+          <li><b>Informes:</b> elige el periodo (un mes, el trimestre, el año, los últimos 7, 30 o 90 días) o pon fechas libres en «Desde» y «Hasta», hasta un año. Muestra puntualidad, llegadas tarde por día, semana o mes según el largo del periodo, quién llegó más tarde y detalle por persona. «Exportar resumen» baja una fila por persona; «Detalle por día», una fila por jornada con horas marcadas y novedades.</li>
           <li><b>Comunicados:</b> publica avisos con imágenes y mira quién confirmó y quién falta.</li>
         </ul>` },
       { id: 'gerencia', titulo: 'Para la gerencia y la administración', ver: esGerencia(), html: `<ul>
@@ -4157,7 +4254,8 @@
           return;
         }
         case 'recargarAsistencia': await accion('asis', cargarAsistencia); return;
-        case 'exportar': exportarInforme(); return;
+        case 'exportar': exportarInforme('resumen'); return;
+        case 'exportarDetalle': exportarInforme('detalle'); return;
         case 'agregarTurno': await accion('turno', agregarTurno); return;
         case 'lbCerrar': S.lb = null; render(); return;
         case 'grupoNuevo': abrirGrupo('nuevo'); return;
@@ -4676,14 +4774,26 @@
     if (d.tsede) { S.turnoSede = +el.value; render(); return; }
     if (d.asede) { S.asisSede = el.value; render(); return; }
     if (d.inf) {
-      S.inf[d.inf] = el.value;
-      if (d.inf === 'mes') {
-        S.inf.sel = null;
-        S.inf.datos = null;
+      const I = S.inf;
+      if (d.inf === 'rango' || d.inf === 'desde' || d.inf === 'hasta') {
+        if (d.inf === 'rango') ponerRango(I, el.value);
+        else {
+          if (!el.value || el.value < '2000-01-01') return; // fecha incompleta mientras se escribe
+          I[d.inf] = el.value;
+          if (I.desde > I.hasta) { if (d.inf === 'desde') I.hasta = I.desde; else I.desde = I.hasta; }
+          if (diasEntre(I.desde, I.hasta) + 1 > MAX_DIAS_INFORME) {
+            if (d.inf === 'desde') I.hasta = sumarDias(I.desde, MAX_DIAS_INFORME - 1); else I.desde = sumarDias(I.hasta, -(MAX_DIAS_INFORME - 1));
+            toast(`El informe abarca hasta ${MAX_DIAS_INFORME} días; ajusté la otra fecha.`, 'warn');
+          }
+          const igual = rangosInforme().todos.find((r) => r.desde === I.desde && r.hasta === I.hasta);
+          I.rango = igual ? igual.id : 'libre';
+        }
+        I.sel = null;
+        I.datos = null;
         render();
         try { await cargarInforme(); } catch (e) { S.errorVista = errorTexto(e); }
         render();
-      } else render();
+      } else { I[d.inf] = el.value; render(); }
       return;
     }
     if (d.archivos === 'com') {
@@ -4791,10 +4901,17 @@
     if (!tip) return;
     const r = ev.target.closest && ev.target.closest('[data-dia]');
     if (!r) { tip.hidden = true; return; }
-    const dia = r.dataset.dia;
+    const dia = r.dataset.dia, hasta = r.dataset.hasta || dia;
     const { porDia } = calcularInformeCache();
-    const lista = porDia[dia] || [];
-    tip.innerHTML = `<b>${esc(fechaLarga(dia))}</b>${lista.length ? lista.map((x) => `<span>${esc(x.nombre)} · ${x.min} min</span>`).join('') : '<span>Nadie llegó tarde</span>'}`;
+    let lista = porDia[dia] || [], titulo = fechaLarga(dia);
+    if (hasta !== dia) {
+      const acum = {};
+      Object.keys(porDia).forEach((d) => { if (d >= dia && d <= hasta) porDia[d].forEach((x) => { const a = acum[x.nombre] = acum[x.nombre] || { nombre: x.nombre, n: 0, min: 0 }; a.n++; a.min += x.min; }); });
+      lista = Object.values(acum).sort((a, b) => b.min - a.min);
+      titulo = `${fechaCorta(dia)} – ${fechaCorta(hasta)}`;
+    }
+    const mas = lista.length > 8 ? `<span>y ${lista.length - 8} más</span>` : '';
+    tip.innerHTML = `<b>${esc(titulo)}</b>${lista.length ? lista.slice(0, 8).map((x) => `<span>${esc(x.nombre)} · ${x.n ? `${x.n}× · ` : ''}${x.min} min</span>`).join('') + mas : '<span>Nadie llegó tarde</span>'}`;
     const box = tip.parentElement.getBoundingClientRect();
     tip.hidden = false;
     const x = Math.min(ev.clientX - box.left + 12, box.width - tip.offsetWidth - 4);
@@ -4803,7 +4920,7 @@
   });
   let cacheInf = { clave: '', valor: null };
   function calcularInformeCache() {
-    const I = S.inf, k = [I.mes, I.sede, I.area, I.datos && I.datos.marcas.length].join('|');
+    const I = S.inf, k = [I.desde, I.hasta, I.sede, I.area, I.datos && I.datos.marcas.length].join('|');
     if (cacheInf.clave !== k) cacheInf = { clave: k, valor: calcularInforme() };
     return cacheInf.valor;
   }
