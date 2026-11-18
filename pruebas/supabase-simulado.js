@@ -362,7 +362,7 @@
       }
     }
     db.ventas_informe.sort((x, y) => x.fecha.localeCompare(y.fecha));
-    db.ventas_estado.push({ id: true, sincronizado: new Date(Date.now() - 4 * 60000).toISOString(), filas: db.ventas_informe.length, clave_creada: sumarDias(HOY, -20) + 'T14:00:00Z' });
+    db.ventas_estado.push({ id: true, sincronizado: new Date(Date.now() - 4 * 60000).toISOString(), filas: db.ventas_informe.length, clave_creada: sumarDias(HOY, -20) + 'T14:00:00Z', boton_listo: true, solicitado: null, solicitado_por: null, pedido_id: null });
   })();
   SERIAL.forEach((t) => { sigId[t] = db[t].reduce((m, r) => Math.max(m, r.id || 0), 0) + 1; });
 
@@ -618,6 +618,32 @@
   // ---------- RPC ----------
   const NOMBRES_PASO = { entrada: 'la entrada', salida_almuerzo: 'la salida a almorzar', regreso_almuerzo: 'el regreso de almuerzo', salida: 'la salida' };
   const RPC = {
+    guardar_tarea_ventas({ p_url, p_token }) {
+      if (!esAdmin()) throw err('Solo la administración puede conectar el botón.');
+      const e = db.ventas_estado[0], url = String(p_url || '').trim(), token = String(p_token || '').trim();
+      if (!url || !token) { e.boton_listo = false; return null; }
+      if (!/^https:\/\/api\.anthropic\.com\/v1\/claude_code\/routines\/trig_[A-Za-z0-9]+\/fire$/.test(url)) throw err('La dirección no parece la «Fire URL» de la tarea (https://api.anthropic.com/v1/claude_code/routines/trig_…/fire).');
+      if (!/^sk-ant-oat01-[A-Za-z0-9_-]{20,}$/.test(token)) throw err('El token no parece el de la tarea (empieza por sk-ant-oat01-).');
+      e.boton_listo = true;
+      return null;
+    },
+    // En la demostración, «la tarea» tarda 4 segundos y vuelve a mandar las mismas ventas
+    pedir_actualizacion_ventas() {
+      if (!esGerencia()) throw err('Solo la gerencia puede actualizar los informes.');
+      const e = db.ventas_estado[0];
+      if (!e.boton_listo) throw err('El botón aún no está conectado: la administración debe conectarlo en «Conexión con el gestor de reservas».');
+      const ahora = Date.now(), pedido = e.solicitado ? new Date(e.solicitado).getTime() : 0;
+      if (pedido && ahora - pedido < 600000 && (!e.sincronizado || new Date(e.sincronizado).getTime() < pedido)) return { estado: 'en_curso', solicitado: e.solicitado };
+      if (pedido && ahora - pedido < 120000) return { estado: 'reciente', solicitado: e.solicitado };
+      e.solicitado = ahoraISO(); e.solicitado_por = uid(); e.pedido_id = (e.pedido_id || 0) + 1;
+      avisarCambio('ventas_estado');
+      setTimeout(() => { e.sincronizado = ahoraISO(); avisarCambio('ventas_estado'); }, 4000);
+      return { estado: 'pedido', solicitado: e.solicitado };
+    },
+    estado_pedido_ventas() {
+      if (!esGerencia()) throw err('Solo la gerencia.');
+      return db.ventas_estado[0].pedido_id ? { estado: 'aceptado', codigo: 200 } : { estado: 'sin_pedido' };
+    },
     nueva_clave_ventas() {
       if (!esAdmin()) throw err('Solo la administración puede crear la clave de los informes.');
       const e = db.ventas_estado[0];

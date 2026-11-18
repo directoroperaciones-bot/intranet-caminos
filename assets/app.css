@@ -997,3 +997,14 @@ button.gbar-r:hover, .gbar-r[aria-pressed="true"] { background: var(--hueso); }
   .gcol-v { display: none; }
   .gcard { padding: 16px; }
 }
+
+/* Conexión: botón «Actualizar» y script opcional */
+.gcon-boton, .gcon-script { border-top: 1px solid var(--hairline); padding-top: 14px; display: flex; flex-direction: column; gap: 8px; }
+.gcon-boton h3, .gcon-script h3 { margin: 0; font: 600 14px/1.3 var(--fuente); color: var(--carbon); }
+.gcon-f { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr) auto; gap: 10px; align-items: end; }
+.gcon-f label { display: flex; flex-direction: column; gap: 4px; }
+.gcon-f label span { font: 600 10.5px/1.2 var(--fuente); letter-spacing: .12em; text-transform: uppercase; color: var(--pizarra); }
+.gcon-f input { font-family: var(--mono); font-size: 13px; }
+.gcon-d dd .i { width: 14px; height: 14px; color: var(--ok); vertical-align: -2px; }
+.vivo.trabajando::before { animation: latido 1s infinite; }
+@media (max-width: 760px) { .gcon-f { grid-template-columns: minmax(0, 1fr); } }

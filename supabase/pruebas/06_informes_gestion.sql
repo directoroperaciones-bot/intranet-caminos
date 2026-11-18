@@ -77,4 +77,42 @@ select prueba.ok(aplicar_ventas($$[{"id":"v1","asesora":"Andrea","fecha":"2026-0
 select prueba.ok((select count(*) = 1 and sum(valor) = 1500000 from ventas_informe), 'la carga directa también reemplaza el resumen');
 select prueba.ok((select filas = 1 from ventas_estado), 'y deja la hora y el número de ventas');
 
+\echo '--- Botón «Actualizar»: despierta la tarea de Claude'
+select prueba.como('Gerencia Admin');
+select prueba.falla($$select pedir_actualizacion_ventas()$$, 'sin conectar, el botón explica que falta conectarlo');
+select prueba.falla($$select guardar_tarea_ventas('https://otro.sitio/fire', 'sk-ant-oat01-abcdefghijklmnopqrstuvwxyz')$$, 'solo acepta la dirección de una tarea de Claude');
+select prueba.falla($$select guardar_tarea_ventas('https://api.anthropic.com/v1/claude_code/routines/trig_01ABC/fire', 'clave-cualquiera')$$, 'solo acepta un token de tarea');
+select prueba.como('Directora Bogotá');
+select prueba.falla($$select guardar_tarea_ventas('https://api.anthropic.com/v1/claude_code/routines/trig_01ABC/fire', 'sk-ant-oat01-abcdefghijklmnopqrstuvwxyz')$$, 'una directora no conecta el botón');
+select prueba.falla($$select pedir_actualizacion_ventas()$$, 'una directora no usa el botón');
+select prueba.como('Gerencia Admin');
+select guardar_tarea_ventas('https://api.anthropic.com/v1/claude_code/routines/trig_01ABC/fire', 'sk-ant-oat01-abcdefghijklmnopqrstuvwxyz');
+select prueba.ok((select boton_listo from ventas_estado), 'la administración conecta el botón');
+select prueba.falla($$select * from vault.decrypted_secrets$$, 'el token no se puede leer desde la intranet');
+select prueba.ok((pedir_actualizacion_ventas()) ->> 'estado' = 'pedido', 'el botón pide la actualización');
+reset role;
+select prueba.ok((select url = 'https://api.anthropic.com/v1/claude_code/routines/trig_01ABC/fire'
+                     and headers ->> 'Authorization' = 'Bearer sk-ant-oat01-abcdefghijklmnopqrstuvwxyz'
+                     and headers ? 'anthropic-version' from net.pedidos order by id desc limit 1), 'llama a la tarea con su token');
+select prueba.como('Gerencia Admin');
+select prueba.ok((pedir_actualizacion_ventas()) ->> 'estado' = 'en_curso', 'otro clic mientras corre no pide otra vez');
+reset role;
+select prueba.ok((select count(*) = 1 from net.pedidos), 'solo hubo un pedido');
+select prueba.ok((select solicitado is not null and solicitado_por = prueba.id('Gerencia Admin') from ventas_estado), 'queda quién y cuándo lo pidió');
+insert into net._http_response (id, status_code) select pedido_id, 401 from ventas_estado;
+select prueba.como('Gerencia Admin');
+select prueba.ok((estado_pedido_ventas()) ->> 'codigo' = '401' and (estado_pedido_ventas()) ->> 'estado' = 'rechazado', 'si la tarea rechaza el pedido, la intranet lo sabe');
+reset role;
+-- Llegan los datos (la tarea terminó) y pasaron 3 minutos: se puede pedir de nuevo
+update ventas_estado set solicitado = now() - interval '3 minutes', sincronizado = now() - interval '1 minute';
+select prueba.como('Gerencia Admin');
+select prueba.ok((pedir_actualizacion_ventas()) ->> 'estado' = 'pedido', 'terminada la anterior, se puede pedir otra');
+select guardar_tarea_ventas('', '');
+select prueba.ok(not (select boton_listo from ventas_estado), 'la administración puede desconectar el botón');
+reset role;
+select prueba.ok(not exists (select 1 from vault.secrets where name like 'ventas_tarea%'), 'al desconectar se borra el token');
+set role anon;
+select prueba.falla($$select pedir_actualizacion_ventas()$$, 'sin sesión no se usa el botón');
+reset role;
+
 \echo '=== 06_informes_gestion: todo OK'

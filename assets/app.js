@@ -1866,13 +1866,28 @@
     return `hace ${plural(Math.round(h / 24), 'día', 'días')}`;
   }
   const gesViejo = () => { const e = S.ges.estado; return !!(e && e.sincronizado && Date.now() - new Date(e.sincronizado).getTime() > 26 * 3600000); };
+  // Hay una actualización pedida con el botón que todavía no llega (máximo 15 minutos)
+  const gesActualizando = () => {
+    const e = S.ges.estado;
+    if (!e || !e.solicitado) return false;
+    const pedido = new Date(e.solicitado).getTime();
+    return Date.now() - pedido < 15 * 60000 && (!e.sincronizado || new Date(e.sincronizado).getTime() < pedido);
+  };
   function vivoGes() {
     const e = S.ges.estado, sinc = e && e.sincronizado;
+    if (gesActualizando()) {
+      return `<span id="ges-vivo" class="vivo on trabajando" title="El agente de Claude está leyendo el gestor de reservas. Tarda unos minutos; la pantalla se recarga sola al terminar.">Actualizando desde el gestor de reservas…</span>`;
+    }
     const txt = sinc ? `Gestor de reservas · ${haceTxt(sinc)}` : 'Aún sin sincronizar';
     const t = sinc ? `Última sincronización: ${fechaHora(sinc, miTz())}. Se actualiza sola todos los días desde el gestor de reservas.` : 'Aún no llegan datos del gestor de reservas.';
     return `<span id="ges-vivo" class="vivo${S.ges.vivo && !gesViejo() ? ' on' : ''}" title="${esc(t)}">${esc(txt)}</span>`;
   }
-  setInterval(() => { const v = document.getElementById('ges-vivo'); if (v) v.outerHTML = vivoGes(); }, 30000);
+  setInterval(() => {
+    const v = document.getElementById('ges-vivo');
+    if (v) v.outerHTML = vivoGes();
+    // Mientras el agente trabaja, se revisa cada 30 s por si el aviso en vivo no llega
+    if (S.view === 'gestion' && gesActualizando()) recargarGestion();
+  }, 30000);
 
   // ---------- Cálculos ----------
   // Filas que pasan todos los filtros menos «excepto» (la dimensión de la gráfica que las pide)
@@ -2175,21 +2190,68 @@
         <div class="acc"><button type="button" class="btn" data-copiar="ventas">${ico('copiar')}Copiar</button><button type="button" class="btn ghost" data-accion="gesClaveCerrar">Listo</button></div>
       </div>` : '';
     return `<section class="gcard gcon"><header><div><h2>Conexión con el gestor de reservas</h2>
-        <p>Una tarea automática de Claude <b>solo lee</b> la hoja de AppSheet todos los días a las 6 a. m. y manda aquí un resumen por venta, sin datos de clientes ni pasajeros. Nunca modifica la hoja. Para datos cada 10 minutos, se puede instalar además el script de Google con esta clave (ver <b>informes/LEEME.md</b>).</p></div></header>
+        <p>Una tarea automática de Claude <b>solo lee</b> la hoja de AppSheet todos los días a las 6 a. m., y cada vez que alguien toca «Actualizar», y manda aquí un resumen por venta, sin datos de clientes ni pasajeros. Nunca modifica la hoja.</p></div></header>
         <dl class="gcon-d">
           <div><dt>Última sincronización</dt><dd>${e.sincronizado ? `${esc(fechaHora(e.sincronizado, miTz()))} · ${esc(haceTxt(e.sincronizado))}` : 'Nunca'}</dd></div>
           <div><dt>Ventas recibidas</dt><dd>${(e.filas || 0).toLocaleString('es-CO')}</dd></div>
-          <div><dt>Clave del script</dt><dd>${e.clave_creada ? `Creada el ${esc(fechaHora(e.clave_creada, miTz()))}` : 'Sin crear'}</dd></div>
+          <div><dt>Botón «Actualizar»</dt><dd>${e.boton_listo ? `${ico('check')} Conectado a la tarea de Claude` : 'Sin conectar (solo recarga)'}</dd></div>
         </dl>
-        ${clave || `<div class="acc"><button type="button" class="btn ghost sm" data-accion="gesClave"${ocupado('gesClave')}>${ico('llave')}${e.clave_creada ? 'Cambiar la clave del script' : 'Crear la clave del script'}</button></div>`}
+        <div class="gcon-boton">
+          <h3>Conectar el botón «Actualizar» con la tarea de Claude</h3>
+          <p class="hint">En <b>claude.ai/code/routines</b>, abre la tarea «Actualizar informes de gestión» → <b>Editar</b> → en <b>Trigger</b> toca <b>+</b> → <b>API</b> → <b>Generate token</b>. Copia aquí la <b>Fire URL</b> y el <b>token</b> (se ve una sola vez). El token se guarda cifrado y nadie lo puede ver desde la intranet.</p>
+          <form class="gcon-f" data-form="gesTarea" autocomplete="off">
+            <label><span>Fire URL</span><input name="url" type="url" required placeholder="https://api.anthropic.com/v1/claude_code/routines/trig_…/fire" spellcheck="false"></label>
+            <label><span>Token</span><input name="token" type="password" required placeholder="sk-ant-oat01-…" spellcheck="false" autocomplete="new-password"></label>
+            <div class="acc"><button type="submit" class="btn sm"${ocupado('gesTarea')}>${ico('llave')}${e.boton_listo ? 'Cambiar la conexión' : 'Conectar el botón'}</button>${e.boton_listo ? `<button type="button" class="btn txt sm" data-accion="gesTareaQuitar"${ocupado('gesTarea')}>Desconectar</button>` : ''}</div>
+          </form>
+        </div>
+        <div class="gcon-script"><h3>Opcional: script de Google (datos cada 10 minutos)</h3>
+          <p class="hint">Clave del script: ${e.clave_creada ? `creada el ${esc(fechaHora(e.clave_creada, miTz()))}` : 'sin crear'}.</p>
+          ${clave || `<div class="acc"><button type="button" class="btn ghost sm" data-accion="gesClave"${ocupado('gesClave')}>${ico('llave')}${e.clave_creada ? 'Cambiar la clave del script' : 'Crear la clave del script'}</button></div>`}
+        </div>
       </section>`;
+  }
+
+  // Botón «Actualizar»: si está conectado, despierta la tarea de Claude; si no, recarga lo guardado
+  let gesRevision = null;
+  async function actualizarGestion() {
+    await accion('gesActualizar', async () => {
+      await cargarGestion();
+      if (!S.ges.estado || !S.ges.estado.boton_listo) {
+        toast(esAdmin() ? 'Datos recargados. Para traer datos nuevos de AppSheet con este botón, conéctalo abajo en «Conexión con el gestor de reservas».' : 'Datos recargados.');
+        return;
+      }
+      const r = await q(sb.rpc('pedir_actualizacion_ventas'));
+      await cargarGestion();
+      if (r && r.estado === 'pedido') {
+        toast('Listo: el agente de Claude está leyendo el gestor de reservas. En unos minutos se actualiza solo.');
+        clearTimeout(gesRevision);
+        gesRevision = setTimeout(revisarPedidoGestion, 8000);
+      } else {
+        toast('Ya hay una actualización en camino; en unos minutos se ve aquí.', 'warn');
+      }
+    });
+  }
+  // Unos segundos después, se confirma que la tarea aceptó el pedido
+  async function revisarPedidoGestion() {
+    if (S.view !== 'gestion') return;
+    let r = null;
+    try { r = await q(sb.rpc('estado_pedido_ventas')); } catch (e) { return; }
+    if (!r || r.estado === 'esperando') { gesRevision = setTimeout(revisarPedidoGestion, 6000); return; }
+    if (r.estado === 'rechazado') {
+      const motivo = r.codigo === 401 ? 'el token ya no sirve: hay que conectar el botón de nuevo'
+        : r.codigo === 429 ? 'se pidieron demasiadas actualizaciones en la última hora'
+        : r.codigo === 400 ? 'la tarea está en pausa en claude.ai'
+        : `respondió ${r.codigo || 'sin conexión'}`;
+      toast(`La tarea de Claude no aceptó el pedido: ${motivo}.`, 'bad');
+    }
   }
 
   function gestionView() {
     const G = S.ges, meses = gesMeses();
     const cab = encabezado('Panel de gerencia', 'Informes de <em>gestión</em>',
       `Ventas del gestor de reservas${G.mes ? ` registradas en <b>${esc(nombreMes(G.mes))}</b>` : ', todos los meses'}. Toca cualquier barra, columna o estado para filtrar todo el tablero.`,
-      `<div class="ges-h">${vivoGes()}<button type="button" class="btn ghost sm" data-accion="gesRecargar"${ocupado('gesRecargar')}>${ico('recargar')}Actualizar</button></div>`);
+      `<div class="ges-h">${vivoGes()}<button type="button" class="btn ghost sm" data-accion="gesActualizar"${ocupado('gesActualizar')}${gesActualizando() ? ' disabled' : ''} title="${G.estado && G.estado.boton_listo ? 'Pide al agente de Claude que lea ahora el gestor de reservas' : 'Vuelve a cargar los datos guardados'}">${ico('recargar')}${gesActualizando() ? 'Actualizando…' : 'Actualizar'}</button></div>`);
     if (!G.filas.length) {
       return `${cab}<div class="notice">${ico('grafica')}<div><b>Aún no llegan ventas del gestor de reservas.</b><p>${esAdmin() ? 'Crea la clave del script abajo y sigue los pasos de <b>informes/LEEME.md</b>. En cuanto el script corra, el tablero se llena solo.' : 'La administración debe conectar el script del gestor de reservas.'}</p></div></div>${gesConexion()}`;
     }
@@ -3336,7 +3398,7 @@
           <li><b>Comunicados:</b> avisos internos. Si piden confirmación, léelos y toca «Confirmar lectura». En Inicio aparece una franja si tienes alguno pendiente.</li>
           <li><b>Herramientas:</b> las tarjetas de Inicio abren el Gestor de reservas, Caminos Documentos y el Cotizador en una pestaña nueva.</li>
         </ul>` },
-      { id: 'gestion', titulo: 'Informes de gestión (ventas)', ver: esGerencia(), html: `<p>La pestaña «Gestión» muestra las ventas del gestor de reservas de AppSheet. Se actualiza sola todos los días a las 6 a. m. y la hoja nunca se modifica desde la intranet. Arriba a la derecha dice cuándo fue la última actualización.</p>
+      { id: 'gestion', titulo: 'Informes de gestión (ventas)', ver: esGerencia(), html: `<p>La pestaña «Gestión» muestra las ventas del gestor de reservas de AppSheet. Se actualiza sola todos los días a las 6 a. m., y cuando tocas <b>Actualizar</b>: un agente de Claude lee la hoja en ese momento y en unos minutos se ven los datos nuevos. La hoja nunca se modifica desde la intranet. Arriba a la derecha dice cuándo fue la última actualización.</p>
           <ul><li><b>Filtros:</b> elige un mes arriba, o una asesora, un estado o un tipo de venta. Todo el tablero cambia a la vez.</li>
           <li><b>Tocar para filtrar:</b> una columna del mes, un estado de la dona, una barra o una asesora también filtran todo. Tocar de nuevo quita el filtro. Los filtros activos quedan arriba, con «Quitar filtros».</li>
           <li><b>Medir por:</b> valor, número de ventas o utilidad.</li>
@@ -3938,7 +4000,14 @@
           await accion('gesClave', async () => { S.ges.clave = await q(sb.rpc('nueva_clave_ventas')); await cargarGestion(); });
           return;
         case 'gesClaveCerrar': S.ges.clave = null; render(); return;
-        case 'gesRecargar': await accion('gesRecargar', cargarGestion); return;
+        case 'gesActualizar': await actualizarGestion(); return;
+        case 'gesTareaQuitar':
+          await accion('gesTarea', async () => {
+            await q(sb.rpc('guardar_tarea_ventas', { p_url: '', p_token: '' }));
+            await cargarGestion();
+            toast('Botón desconectado: ahora solo recarga los datos guardados.');
+          });
+          return;
         case 'gesLimpiar': S.ges.f = {}; S.ges.mes = ''; render(); return;
         case 'gesDetalle': S.ges.detalle = !S.ges.detalle; render(); return;
         case 'gesExportar': exportarGestion(); return;
@@ -4240,6 +4309,15 @@
       return;
     }
     if (tipo === 'olvido') { await pedirEnlace(f.correo.value.trim().toLowerCase()); return; }
+    if (tipo === 'gesTarea') {
+      const url = f.url.value.trim(), token = f.token.value.trim();
+      await accion('gesTarea', async () => {
+        await q(sb.rpc('guardar_tarea_ventas', { p_url: url, p_token: token }));
+        await cargarGestion();
+        toast('Botón conectado: «Actualizar» ahora despierta la tarea de Claude.');
+      });
+      return;
+    }
     if (tipo === 'clave') {
       const a = f.clave.value, b = f.clave2.value;
       if (a.length < 8) { S.error = 'La contraseña debe tener 8 caracteres o más.'; foco = 'input[name=clave]'; render(); return; }

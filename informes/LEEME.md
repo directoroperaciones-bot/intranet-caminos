@@ -6,6 +6,13 @@ La pestaña **Gestión** de la intranet (solo gerencia y administración) es un 
 
 **Hoy (desde el 18 de noviembre de 2026): una tarea automática de Claude, todos los días a las 6 a. m. (hora de Bogotá).** Corre con el modelo Sonnet y no hay que instalar nada en Google. Usa las conexiones de Claude: Google Sheets solo para leer y Supabase para escribir el resumen. Corre `informes/sincronizar_desde_claude.py`, que lee la hoja con `GOOGLESHEETS_BATCH_GET`. Arma el resumen con la misma función de `Codigo.gs`, sin datos personales, y lo carga con `aplicar_ventas` (migración 017). Si la hoja llega vacía, o con muchas menos ventas que las que hay en la intranet, no cambia nada y avisa. La tarea se ve, se pausa o se corre a mano en claude.ai, en las tareas programadas. Se llama «Actualizar informes de gestión».
 
+**Botón «Actualizar» de la pestaña Gestión:** despierta la misma tarea en el momento, sin esperar a las 6 a. m. Mientras el agente trabaja (unos minutos), arriba dice «Actualizando desde el gestor de reservas…». La pantalla se recarga sola al terminar. Se puede pedir una vez cada 10 minutos (otro clic mientras corre no pide otra), y la gerencia lo usa. Cómo funciona por dentro: la base llama a la tarea por internet con `pg_net` (migración 018), usando la «Fire URL» y el token de la tarea, guardados cifrados en Vault. Nadie los puede leer desde la intranet. **Para conectarlo (una vez, administración):**
+
+1. En claude.ai/code/routines, abre «Actualizar informes de gestión» → **Editar** → en **Trigger** toca **+** → **API** → **Generate token**. El token se ve una sola vez.
+2. En la intranet: **Gestión → Conexión con el gestor de reservas → Conectar el botón**. Pega la **Fire URL** y el **token** y toca **Conectar el botón**.
+
+Si el token se regenera en claude.ai, el anterior deja de servir: hay que pegar el nuevo. Sin conectar, «Actualizar» solo recarga los datos guardados.
+
 **Opcional, si se quieren datos cada 10 minutos:** el programa de Google (Apps Script) de abajo. Hace lo mismo, gratis.
 
 

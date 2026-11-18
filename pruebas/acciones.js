@@ -722,6 +722,24 @@ let page;
   ok(/^[0-9a-f]{48}$/.test((await page.textContent('.gcon .clave dd.mono')).trim()), 'gestión: la administración crea la clave del script una vez');
   await page.click('[data-accion=gesClaveCerrar]');
   ok(!(await page.$('.gcon .clave')), 'gestión: la clave desaparece al cerrar');
+  // Botón «Actualizar»: despierta la tarea de Claude y la pantalla se actualiza sola
+  await page.click('[data-accion=gesActualizar]');
+  ok(await avisa('agente de Claude'), 'gestión: «Actualizar» pide la actualización al agente');
+  await page.waitForFunction(() => /Actualizando/.test(document.getElementById('ges-vivo').textContent), null, { timeout: 3000 });
+  ok(await page.$('[data-accion=gesActualizar][disabled]'), 'gestión: mientras trabaja, el botón queda en «Actualizando…»');
+  await page.waitForFunction(() => /hace un momento/.test(document.getElementById('ges-vivo').textContent), null, { timeout: 9000 });
+  ok(!(await page.$('[data-accion=gesActualizar][disabled]')), 'gestión: al llegar los datos se actualiza solo y el botón vuelve');
+  // Conexión del botón (administración)
+  await page.click('[data-accion=gesTareaQuitar]');
+  ok(await avisa('desconectado'), 'gestión: la administración desconecta el botón');
+  await page.fill('form[data-form=gesTarea] input[name=url]', 'https://otro.sitio/fire');
+  await page.fill('form[data-form=gesTarea] input[name=token]', 'sk-ant-oat01-abcdefghijklmnopqrstuvwxyz');
+  await page.click('form[data-form=gesTarea] button[type=submit]');
+  ok(await avisa('Fire URL'), 'gestión: rechaza una dirección que no es de una tarea de Claude');
+  await page.fill('form[data-form=gesTarea] input[name=url]', 'https://api.anthropic.com/v1/claude_code/routines/trig_01ABCDEF/fire');
+  await page.fill('form[data-form=gesTarea] input[name=token]', 'sk-ant-oat01-abcdefghijklmnopqrstuvwxyz');
+  await page.click('form[data-form=gesTarea] button[type=submit]');
+  ok(await avisa('Botón conectado'), 'gestión: la administración conecta el botón con la tarea');
 
   ok(errores.length === 0, 'sin errores de página' + (errores.length ? ': ' + errores.join(' | ') : ''));
   await browser.close();
