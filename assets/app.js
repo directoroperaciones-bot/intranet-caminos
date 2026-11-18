@@ -3025,20 +3025,36 @@
   }
   function fichaGrupoHtml(g) {
     const c = columna(g.estado), resp = g.responsable_id && persona(g.responsable_id);
-    const n = g.salida && g.regreso ? diasEntre(g.salida, g.regreso) + 1 : g.salida ? 1 : 0;
-    const fechas = !g.salida ? 'Sin fechas todavía'
-      : g.regreso && g.regreso !== g.salida ? `Sale el ${fechaFicha(g.salida)} y regresa el ${fechaFicha(g.regreso)}` : `${fechaFicha(g.salida)}`;
+    const hoy = fechaEn(miTz()), anio = hoy.slice(0, 4);
+    const regreso = g.regreso || g.salida;
+    const n = g.salida ? diasEntre(g.salida, regreso) + 1 : 0;
+    const diaCaja = (etq, iso) => iso
+      ? `<div class="gviaje-dia"><span class="gviaje-etq">${etq}</span><b class="gviaje-num">${+iso.slice(8, 10)}</b><span class="gviaje-mes">${MESES[+iso.slice(5, 7) - 1].slice(0, 3)}${iso.slice(0, 4) !== anio ? ' ' + iso.slice(0, 4) : ''}</span><span class="gviaje-sem">${DIAS_LARGOS[diaSemana(iso) - 1]}</span></div>`
+      : `<div class="gviaje-dia vacia"><span class="gviaje-etq">${etq}</span><span class="gviaje-sem">Sin fecha</span></div>`;
+    let cuando = '';
+    if (g.salida) {
+      const faltan = diasEntre(hoy, g.salida), pasaron = diasEntre(regreso, hoy);
+      cuando = faltan > 0 ? `Faltan ${plural(faltan, 'día', 'días')} para la salida` : faltan === 0 ? 'Sale hoy' : pasaron <= 0 ? 'Está de viaje ahora' : `Regresó hace ${plural(pasaron, 'día', 'días')}`;
+    }
+    const viaje = g.salida
+      ? `<div class="gviaje">
+          ${diaCaja('Salida', g.salida)}
+          <div class="gviaje-medio">${ico('avion')}<span>${plural(n, 'día', 'días')}</span></div>
+          ${diaCaja('Regreso', g.regreso || g.salida)}
+        </div><p class="gviaje-cuando">${ico('reloj')}${esc(cuando)}</p>`
+      : `<div class="gviaje vacia">${ico('calendario')}<span>Aún no tiene fechas de salida ni de regreso.</span></div>`;
     const dato = (icono, etq, val, vacio) => `<div class="gficha-dato"><dt>${ico(icono)}${etq}</dt><dd${val ? '' : ' class="vacia"'}>${val || vacio}</dd></div>`;
     return `<div class="gficha-cab"><span class="gficha-etapa">${esc(c.nombre)}</span>
         <button type="button" class="btn txt sm gficha-x" data-accion="gfichaCerrar" aria-label="Cerrar">${ico('x')}</button></div>
       <h3 id="gficha-t">${esc(g.nombre)}</h3>
       ${g.destino ? `<p class="gficha-dest">${ico('avion')}${esc(g.destino)}</p>` : ''}
-      <dl class="gficha-dl">
-        ${dato('iglesia', 'Parroquia', g.parroquia ? esc(g.parroquia) : '', 'Sin parroquia')}
-        ${dato('calendario', 'Fechas', esc(fechas) + (n > 1 ? ` <span class="gficha-n">${plural(n, 'día', 'días')}</span>` : ''), '')}
-        ${dato('usuarios', 'Pasajeros', g.pasajeros != null ? esc(String(g.pasajeros)) : '', 'Sin definir')}
-        ${dato('usuarioMas', 'Responsable', resp ? esc(resp.nombre) : '', 'Sin responsable')}
-      </dl>
+      <section class="gficha-sec"><h4>Viaje</h4>${viaje}</section>
+      <section class="gficha-sec"><h4>Grupo</h4>
+        <dl class="gficha-dl">
+          ${dato('iglesia', 'Parroquia', g.parroquia ? esc(g.parroquia) : '', 'Sin parroquia')}
+          ${dato('usuarios', 'Pasajeros', g.pasajeros != null ? esc(String(g.pasajeros)) : '', 'Sin definir')}
+          ${dato('usuarioMas', 'Responsable', resp ? esc(resp.nombre) : '', 'Sin responsable')}
+        </dl></section>
       <section class="gficha-sec"><h4>Alcance</h4>${g.alcance ? `<p class="gficha-texto">${esc(g.alcance)}</p>` : '<p class="gficha-texto vacia">Aún no se ha escrito qué incluye.</p>'}</section>
       ${g.notas ? `<section class="gficha-sec"><h4>Notas internas <small>(solo el equipo)</small></h4><p class="gficha-texto">${esc(g.notas)}</p></section>` : ''}
       <p class="gficha-meta">Creado por ${esc(nombreDe(g.creado_por))}${g.actualizado_por ? ` · último cambio de ${esc(nombreDe(g.actualizado_por))}, ${esc(fechaHora(g.actualizado, miTz()))}` : ''}</p>
