@@ -4,12 +4,17 @@ La pestaña **Gestión** de la intranet (solo gerencia y administración) es un 
 
 ## Cómo llegan los datos
 
-Un programa gratis de Google (Apps Script) corre **cada 10 minutos**:
+**Hoy (desde el 18 de noviembre de 2026): una tarea automática de Claude, todos los días a las 6 a. m. (hora de Bogotá).** Corre con el modelo Sonnet y no hay que instalar nada en Google. Usa las conexiones de Claude: Google Sheets solo para leer y Supabase para escribir el resumen. Corre `informes/sincronizar_desde_claude.py`, que lee la hoja con `GOOGLESHEETS_BATCH_GET`. Arma el resumen con la misma función de `Codigo.gs`, sin datos personales, y lo carga con `aplicar_ventas` (migración 017). Si la hoja llega vacía, o con muchas menos ventas que las que hay en la intranet, no cambia nada y avisa. La tarea se ve, se pausa o se corre a mano en claude.ai, en las tareas programadas. Se llama «Actualizar informes de gestión».
+
+**Opcional, si se quieren datos cada 10 minutos:** el programa de Google (Apps Script) de abajo. Hace lo mismo, gratis.
+
+
+Con el programa de Google, cada **10 minutos**:
 
 1. **Lee** la hoja con el permiso «ver hojas de cálculo» (`spreadsheets.readonly`). Con ese permiso no puede cambiar ni borrar nada en la hoja, aunque quisiera.
 2. Arma **una fila por venta**, sin datos personales. Lleva asesora, fecha de registro, estado, tipo de venta y de viaje, destino, plan, fechas de viaje, número de pasajeros y valores. No lleva clientes, solicitantes, nombres de pasajeros ni teléfonos.
 3. La manda a la intranet con la clave `CLAVE_VENTAS`. La intranet reemplaza el resumen anterior; una venta que ya no está en la hoja sale del informe. En la base solo queda la huella de la clave.
-4. La pantalla abierta se actualiza sola. Arriba dice cuándo fue la última sincronización y avisa si pasaron más de 3 horas sin datos nuevos.
+4. La pantalla abierta se actualiza sola. Arriba dice cuándo fue la última sincronización y avisa si pasó más de un día sin datos nuevos.
 
 ### Cómo se calcula cada dato
 
@@ -30,7 +35,7 @@ Son las mismas cuentas del tablero «Resumen Asesores» de AppSheet, comparadas 
 | Plan | `Paquete_Religioso` traducido con PANEL_DE_COSTEOS (`Nombre_Plan`) |
 | Seguimiento | `Estado_Segundo_Seguimiento` o, si está vacío, el primero |
 
-## Instalación (una sola vez, unos 10 minutos)
+## Instalación del programa de Google (opcional, unos 10 minutos)
 
 Hazla con la cuenta que **puede ver** la hoja del gestor de reservas (la misma que usa AppSheet o una con acceso de lectura). El paso 1 necesita una cuenta de **administración** en la intranet.
 

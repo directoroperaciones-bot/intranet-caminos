@@ -66,4 +66,15 @@ set role anon;
 select prueba.falla($$select sincronizar_ventas((select c from clave_ventas), '[]')$$, 'la clave vieja deja de servir');
 reset role;
 
+\echo '--- Carga directa (tarea diaria): solo el servidor'
+set role anon;
+select prueba.falla($$select aplicar_ventas('[]')$$, 'sin sesión no se llama aplicar_ventas');
+reset role;
+select prueba.como('Gerencia Admin');
+select prueba.falla($$select aplicar_ventas('[]')$$, 'ni la administración llama aplicar_ventas desde la intranet');
+reset role;
+select prueba.ok(aplicar_ventas($$[{"id":"v1","asesora":"Andrea","fecha":"2026-09-02","estado":"Facturado","valor":1500000,"costo":800000}]$$::jsonb) = 1, 'el servidor (postgres) carga las ventas directamente');
+select prueba.ok((select count(*) = 1 and sum(valor) = 1500000 from ventas_informe), 'la carga directa también reemplaza el resumen');
+select prueba.ok((select filas = 1 from ventas_estado), 'y deja la hora y el número de ventas');
+
 \echo '=== 06_informes_gestion: todo OK'

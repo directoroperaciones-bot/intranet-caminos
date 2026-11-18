@@ -1865,11 +1865,11 @@
     if (h < 48) return `hace ${plural(h, 'hora', 'horas')}`;
     return `hace ${plural(Math.round(h / 24), 'día', 'días')}`;
   }
-  const gesViejo = () => { const e = S.ges.estado; return !!(e && e.sincronizado && Date.now() - new Date(e.sincronizado).getTime() > 3 * 3600000); };
+  const gesViejo = () => { const e = S.ges.estado; return !!(e && e.sincronizado && Date.now() - new Date(e.sincronizado).getTime() > 26 * 3600000); };
   function vivoGes() {
     const e = S.ges.estado, sinc = e && e.sincronizado;
     const txt = sinc ? `Gestor de reservas · ${haceTxt(sinc)}` : 'Aún sin sincronizar';
-    const t = sinc ? `Última sincronización: ${fechaHora(sinc, miTz())}. El gestor de reservas se lee cada 10 minutos.` : 'El script del gestor de reservas aún no ha mandado datos.';
+    const t = sinc ? `Última sincronización: ${fechaHora(sinc, miTz())}. Se actualiza sola todos los días desde el gestor de reservas.` : 'Aún no llegan datos del gestor de reservas.';
     return `<span id="ges-vivo" class="vivo${S.ges.vivo && !gesViejo() ? ' on' : ''}" title="${esc(t)}">${esc(txt)}</span>`;
   }
   setInterval(() => { const v = document.getElementById('ges-vivo'); if (v) v.outerHTML = vivoGes(); }, 30000);
@@ -2175,7 +2175,7 @@
         <div class="acc"><button type="button" class="btn" data-copiar="ventas">${ico('copiar')}Copiar</button><button type="button" class="btn ghost" data-accion="gesClaveCerrar">Listo</button></div>
       </div>` : '';
     return `<section class="gcard gcon"><header><div><h2>Conexión con el gestor de reservas</h2>
-        <p>Un script de Google <b>solo lee</b> la hoja de AppSheet cada 10 minutos y manda aquí un resumen por venta, sin datos de clientes ni pasajeros. Nunca modifica la hoja.</p></div></header>
+        <p>Una tarea automática de Claude <b>solo lee</b> la hoja de AppSheet todos los días a las 6 a. m. y manda aquí un resumen por venta, sin datos de clientes ni pasajeros. Nunca modifica la hoja. Para datos cada 10 minutos, se puede instalar además el script de Google con esta clave (ver <b>informes/LEEME.md</b>).</p></div></header>
         <dl class="gcon-d">
           <div><dt>Última sincronización</dt><dd>${e.sincronizado ? `${esc(fechaHora(e.sincronizado, miTz()))} · ${esc(haceTxt(e.sincronizado))}` : 'Nunca'}</dd></div>
           <div><dt>Ventas recibidas</dt><dd>${(e.filas || 0).toLocaleString('es-CO')}</dd></div>
@@ -3336,7 +3336,7 @@
           <li><b>Comunicados:</b> avisos internos. Si piden confirmación, léelos y toca «Confirmar lectura». En Inicio aparece una franja si tienes alguno pendiente.</li>
           <li><b>Herramientas:</b> las tarjetas de Inicio abren el Gestor de reservas, Caminos Documentos y el Cotizador en una pestaña nueva.</li>
         </ul>` },
-      { id: 'gestion', titulo: 'Informes de gestión (ventas)', ver: esGerencia(), html: `<p>La pestaña «Gestión» muestra las ventas del gestor de reservas de AppSheet. Se actualiza sola cada 10 minutos y la hoja nunca se modifica desde la intranet.</p>
+      { id: 'gestion', titulo: 'Informes de gestión (ventas)', ver: esGerencia(), html: `<p>La pestaña «Gestión» muestra las ventas del gestor de reservas de AppSheet. Se actualiza sola todos los días a las 6 a. m. y la hoja nunca se modifica desde la intranet. Arriba a la derecha dice cuándo fue la última actualización.</p>
           <ul><li><b>Filtros:</b> elige un mes arriba, o una asesora, un estado o un tipo de venta. Todo el tablero cambia a la vez.</li>
           <li><b>Tocar para filtrar:</b> una columna del mes, un estado de la dona, una barra o una asesora también filtran todo. Tocar de nuevo quita el filtro. Los filtros activos quedan arriba, con «Quitar filtros».</li>
           <li><b>Medir por:</b> valor, número de ventas o utilidad.</li>

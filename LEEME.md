@@ -83,10 +83,11 @@ Como Caminos es un cliente nuevo, se fusionaron las del manual (el manual lo per
 | `014_grupos_columnas.sql` | Propia: siete columnas en Grupos (Cotización / costeo, Propuesta comercial, Aprobado parroquia, Gestión comercial, Ejecución grupo, En destino, Finalizado) |
 | `015_horario_rotativo.sql` | Propia: horario fijo que rota por semanas (semana A, B…; ciclo de 2 a 4 semanas desde un lunes) |
 | `016_informes_gestion.sql` | Propia: informes de gestión. Resumen de ventas del gestor de reservas (sin datos personales), solo para gerencia; lo escribe el script `informes/Codigo.gs` con su clave |
+| `017_ventas_aplicar.sql` | Propia: `aplicar_ventas(filas)`, la carga del resumen de ventas que usa la tarea diaria de Claude (solo el servidor puede llamarla) |
 
 ## 3. Pruebas hechas
 
-- **Permisos en Postgres** (`supabase/pruebas/correr.sh`): 243 reglas en verde (con las 22 de los informes de gestión, con las 28 de grupos (con la parroquia) y la clave del calendario, las 20 de marcar solo desde la oficina y las 32 de la conciliación de la tarjeta). Marcas solo con `marcar()`, orden de los pasos, bloqueo por IP, malla por sede, supervisor sin poderes de gerencia, comunicados por destinatario, solicitudes por revisor, ausencias aprobadas, `anon` sin acceso.
+- **Permisos en Postgres** (`supabase/pruebas/correr.sh`): 248 reglas en verde (con las 27 de los informes de gestión, con las 28 de grupos (con la parroquia) y la clave del calendario, las 20 de marcar solo desde la oficina y las 32 de la conciliación de la tarjeta). Marcas solo con `marcar()`, orden de los pasos, bloqueo por IP, malla por sede, supervisor sin poderes de gerencia, comunicados por destinatario, solicitudes por revisor, ausencias aprobadas, `anon` sin acceso.
 - **Interfaz** (`pruebas/recorrido.js`): 4 roles × 2 anchos (1300 px y 390 px), cada pestaña (Grupos en tablero y línea de tiempo) sin desborde horizontal y sin errores de página.
 - **Acciones** (`pruebas/acciones.js`): 186 verificaciones (incluye los filtros cruzados del tablero de gestión, recuperar contraseña, la pestaña Oficina, los gastos y la conciliación de la tarjeta y crear, mover, arrastrar, editar y borrar grupos), entre ellas que el informe cuadra con un cálculo manual independiente y que el CSV sale con BOM, `;` y `\r\n`.
 
@@ -136,7 +137,7 @@ Dos pasos:
 
 ## 3f. Informes de gestión (pestaña Gestión, gerencia)
 
-Tablero de ventas con los datos del gestor de reservas de AppSheet (la hoja se lee cada 10 minutos, nunca se modifica). Instalación y fórmulas en `informes/LEEME.md`.
+Tablero de ventas con los datos del gestor de reservas de AppSheet (la hoja se lee todos los días a las 6 a. m. con una tarea automática de Claude; nunca se modifica). Instalación y fórmulas en `informes/LEEME.md`.
 
 - **Filtros sincronizados:** mes, asesora, estado, tipo de venta y tipo de viaje arriba. Además, tocar una columna, un estado, una barra o una asesora filtra **todo** el tablero. Cada gráfica sigue mostrando las otras opciones de su propio filtro, atenuadas, con la elegida resaltada.
 - **Medir por:** valor, número de ventas o utilidad; cambia todas las gráficas a la vez.
