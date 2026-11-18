@@ -2189,8 +2189,14 @@
         <dl><div><dt>Clave</dt><dd class="mono">${esc(G.clave)}</dd></div></dl>
         <div class="acc"><button type="button" class="btn" data-copiar="ventas">${ico('copiar')}Copiar</button><button type="button" class="btn ghost" data-accion="gesClaveCerrar">Listo</button></div>
       </div>` : '';
+    // Con el botón conectado, el panel queda recogido en una sola línea
+    const abierto = G.conAbierta || !!G.clave || !e.boton_listo;
+    if (!abierto) {
+      return `<section class="gcon-mini"><button type="button" data-accion="gesConexion" aria-expanded="false">
+          ${ico('llave')}<span><b>Conexión con el gestor de reservas</b> · ${ico('check')}Conectada${e.sincronizado ? ` · última sincronización ${esc(haceTxt(e.sincronizado))}` : ''}</span><em>Ver detalles</em></button></section>`;
+    }
     return `<section class="gcard gcon"><header><div><h2>Conexión con el gestor de reservas</h2>
-        <p>Una tarea automática de Claude <b>solo lee</b> la hoja de AppSheet todos los días a las 6 a. m., y cada vez que alguien toca «Actualizar», y manda aquí un resumen por venta, sin datos de clientes ni pasajeros. Nunca modifica la hoja.</p></div></header>
+        <p>Una tarea automática de Claude <b>solo lee</b> la hoja de AppSheet todos los días a las 6 a. m., y cada vez que alguien toca «Actualizar», y manda aquí un resumen por venta, sin datos de clientes ni pasajeros. Nunca modifica la hoja.</p></div>${e.boton_listo && !G.clave ? '<button type="button" class="btn txt sm" data-accion="gesConexion" aria-expanded="true">Ocultar</button>' : ''}</header>
         <dl class="gcon-d">
           <div><dt>Última sincronización</dt><dd>${e.sincronizado ? `${esc(fechaHora(e.sincronizado, miTz()))} · ${esc(haceTxt(e.sincronizado))}` : 'Nunca'}</dd></div>
           <div><dt>Ventas recibidas</dt><dd>${(e.filas || 0).toLocaleString('es-CO')}</dd></div>
@@ -4000,6 +4006,7 @@
           await accion('gesClave', async () => { S.ges.clave = await q(sb.rpc('nueva_clave_ventas')); await cargarGestion(); });
           return;
         case 'gesClaveCerrar': S.ges.clave = null; render(); return;
+        case 'gesConexion': S.ges.conAbierta = !S.ges.conAbierta; render(); return;
         case 'gesActualizar': await actualizarGestion(); return;
         case 'gesTareaQuitar':
           await accion('gesTarea', async () => {

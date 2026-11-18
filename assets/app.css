@@ -1008,3 +1008,12 @@ button.gbar-r:hover, .gbar-r[aria-pressed="true"] { background: var(--hueso); }
 .gcon-d dd .i { width: 14px; height: 14px; color: var(--ok); vertical-align: -2px; }
 .vivo.trabajando::before { animation: latido 1s infinite; }
 @media (max-width: 760px) { .gcon-f { grid-template-columns: minmax(0, 1fr); } }
+
+/* Conexión recogida en una línea */
+.gcon-mini button { width: 100%; display: flex; align-items: center; gap: 10px; border: 1px dashed var(--hairline-2); background: none; border-radius: 14px; padding: 10px 14px; font: 400 13px/1.4 var(--fuente); color: var(--pizarra); cursor: pointer; text-align: left; }
+.gcon-mini button:hover { border-color: var(--coral); color: var(--texto); }
+.gcon-mini b { font-weight: 600; color: var(--texto); }
+.gcon-mini span { flex: 1; min-width: 0; }
+.gcon-mini span .i { width: 13px; height: 13px; color: var(--ok); vertical-align: -2px; margin-right: 2px; }
+.gcon-mini > button > .i { width: 15px; height: 15px; flex: none; }
+.gcon-mini em { font-style: normal; font-weight: 600; color: var(--coral); white-space: nowrap; }
