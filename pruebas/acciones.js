@@ -752,6 +752,22 @@ let page;
   ok(/^[0-9a-f]{48}$/.test((await page.textContent('.gcon .clave dd.mono')).trim()), 'gestión: la administración crea la clave del script una vez');
   await page.click('[data-accion=gesClaveCerrar]');
   ok(!(await page.$('.gcon .clave')), 'gestión: la clave desaparece al cerrar');
+  // Cuentas de cobro de aliados
+  await page.click('[data-cc=nueva]');
+  await page.selectOption('select[data-ccsel=cliente]', 'cli-ricardo');
+  ok(await page.$$eval('.cc-ventas tbody tr', (t) => t.length) === 2, 'cobro: la gerencia ve las ventas por cobrar del aliado en el periodo');
+  await page.click('[data-cc=generar]');
+  ok(await avisa('generada'), 'cobro: la gerencia genera la cuenta de cobro');
+  await page.waitForSelector('.cc-lista tbody tr');
+  ok((await page.textContent('.cc-lista')).includes('Generada por Caminos'), 'cobro: queda en la lista como generada por Caminos');
+  await page.click('[data-ccpedir=enviada]');
+  await page.click('[data-ccestado=enviada]');
+  ok(await avisa('enviada'), 'cobro: se marca como enviada');
+  await page.click('[data-ccpedir=pagada]');
+  await page.click('[data-ccestado=pagada]');
+  ok(await avisa('pagada'), 'cobro: se marca como pagada');
+  await page.waitForFunction(() => /Pagada/.test(document.querySelector('.cc-lista').textContent));
+  ok(!(await page.$('.cc-lista [data-ccpedir=anulada]')), 'cobro: una cuenta pagada ya no se anula');
   // Botón «Actualizar»: despierta la tarea de Claude y la pantalla se actualiza sola
   await page.click('[data-accion=gesActualizar]');
   ok(await avisa('agente de Claude'), 'gestión: «Actualizar» pide la actualización al agente');

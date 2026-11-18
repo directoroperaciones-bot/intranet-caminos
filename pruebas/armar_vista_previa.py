@@ -31,6 +31,7 @@ def main():
         app = app.replace(f"'{archivo}'", f"'{data_svg(archivo)}'")
     scripts = [leer("pruebas/supabase-simulado.js"),
                "window.INTRANET_CONFIG = { supabaseUrl: 'https://demo.local', supabaseKey: 'demo', demo: window.SUPABASE_DEMO, sinDescargas: true };",
+               leer("assets/cuenta-cobro.js"),
                app]
     for s in scripts:
         if "</script" in s.lower():

@@ -178,7 +178,7 @@
     lb: null,
     sol: { lista: [], adj: [], tipo: 'vacaciones', borrador: {}, archivos: [], cancelar: null, coment: {} },
     grupos: { lista: [], vista: 'tablero', parroquia: '', mes: '', abierto: null, borrador: {}, borrar: null, clave: null },
-    ges: { filas: [], estado: null, mes: '', f: {}, medida: 'valor', detalle: false, orden: { col: 'fecha', asc: false }, clave: null, vivo: false, cargado: null },
+    ges: { filas: [], estado: null, mes: '', f: {}, medida: 'valor', detalle: false, orden: { col: 'fecha', asc: false }, clave: null, vivo: false, cargado: null, cc: { datos: null, abierto: false, cliente: '', desde: '', hasta: '', quitadas: new Set(), confirmar: null } },
   };
 
   // ---------- Permisos de interfaz (solo muestran u ocultan) ----------
@@ -422,7 +422,7 @@
   function reiniciar() {
     soltarTarjeta();
     soltarGestion();
-    S.ges = { filas: [], estado: null, mes: '', f: {}, medida: 'valor', detalle: false, orden: { col: 'fecha', asc: false }, clave: null, vivo: false, cargado: null };
+    S.ges = { filas: [], estado: null, mes: '', f: {}, medida: 'valor', detalle: false, orden: { col: 'fecha', asc: false }, clave: null, vivo: false, cargado: null, cc: { datos: null, abierto: false, cliente: '', desde: '', hasta: '', quitadas: new Set(), confirmar: null } };
     S.tc = Object.assign(S.tc, { tarjetas: [], extractos: [], movs: [], regs: [], gastos: [], tarjeta: null, extracto: null, abierto: null, borrador: {}, confirmar: null, borrar: null, vivo: false, paso: 'gastos', mes: '', filtroG: 'todos', archivoRegistro: null, archivoUrl: null, urls: {} });
     Object.assign(S, {
       pantalla: 'login', error: '', recuperacion: false, olvido: { enviado: false, correo: '' }, usuario: null, perfil: null, view: 'inicio', menu: false, hoy: null, asistencia: null, lb: null,
@@ -1840,6 +1840,7 @@
     }));
     S.ges.estado = (estado || [])[0] || null;
     S.ges.cargado = new Date();
+    try { await cargarCuentasCobro(); } catch (e) { S.ges.cc.datos = null; }
     if (S.ges.mes && !gesMeses().includes(S.ges.mes)) S.ges.mes = '';
     suscribirGestion();
   }
@@ -1850,6 +1851,10 @@
     if (canalGes || !sb.channel) return;
     canalGes = sb.channel('informes-gestion');
     canalGes.on('postgres_changes', { event: '*', schema: 'public', table: 'ventas_estado' }, () => {
+      clearTimeout(gesEspera);
+      gesEspera = setTimeout(recargarGestion, 600);
+    });
+    canalGes.on('postgres_changes', { event: '*', schema: 'public', table: 'cuentas_cobro' }, () => {
       clearTimeout(gesEspera);
       gesEspera = setTimeout(recargarGestion, 600);
     });
@@ -2193,6 +2198,78 @@
     toast('Archivo descargado. Ábrelo con Excel.');
   }
 
+  // ---------- Cuentas de cobro de los aliados ----------
+  // El aliado le cobra a Caminos la comisión de varias ventas en un solo documento.
+  // Reglas en la base (generar_cuenta_cobro): facturadas, con número de factura,
+  // modalidad Retorno, dentro del periodo y cada venta una sola vez.
+  async function cargarCuentasCobro() {
+    const [clientes, ventas, cuentas, cobradas] = await Promise.all([
+      q(sb.from('clientes_ext').select('*').order('nombre')),
+      todas(() => sb.from('ventas_cliente').select('id, cliente_id, estado, destino, plan, codigo, factura, fecha_factura, modalidad, comision')),
+      q(sb.from('cuentas_cobro').select('*').order('creada', { ascending: false })),
+      todas(() => sb.from('cuentas_cobro_ventas').select('venta_id, cuenta_id')),
+    ]);
+    S.ges.cc.datos = { clientes: clientes || [], ventas: (ventas || []).map((v) => Object.assign({}, v, { comision: +v.comision || 0 })), cuentas: cuentas || [], cobradas: new Set((cobradas || []).map((x) => x.venta_id)) };
+  }
+  function mesAnteriorRango() {
+    const h = fechaEn(miTz()), d = new Date(Date.UTC(+h.slice(0, 4), +h.slice(5, 7) - 2, 1)), m = d.toISOString().slice(0, 7);
+    return { desde: m + '-01', hasta: ultimoDia(m) };
+  }
+  function gesCuentasCobro() {
+    const C = S.ges.cc, D = C.datos;
+    if (!D) return '';
+    const cliente = (id) => D.clientes.find((c) => c.id === id) || { id, nombre: id };
+    const CC = window.CuentaCobro;
+    let form = '';
+    if (C.abierto) {
+      const aliados = D.clientes.filter((c) => /freelance|aliad/i.test(c.tipo) || D.ventas.some((v) => v.cliente_id === c.id && v.factura));
+      const c = C.cliente ? cliente(C.cliente) : null;
+      const el = c ? CC.elegibles(D.ventas, c, C.desde, C.hasta, D.cobradas) : null;
+      const sel = el ? el.ok.filter((v) => !C.quitadas.has(v.id)) : [];
+      const total = sel.reduce((s2, v) => s2 + v.comision, 0);
+      const falta = c ? CC.faltantes(c) : [];
+      const r = el ? el.razones : null;
+      const notas = r ? [r.sinComision && `${plural(r.sinComision, 'venta sin comisión calculada', 'ventas sin comisión calculada')}`, r.descuento && `${plural(r.descuento, 'venta no está', 'ventas no están')} en modalidad Retorno`, r.sinFactura && `${plural(r.sinFactura, 'venta facturada sin número de factura', 'ventas facturadas sin número de factura')}`, r.cobradas && `${plural(r.cobradas, 'venta ya cobrada', 'ventas ya cobradas')}`, r.fueraPeriodo && `${plural(r.fueraPeriodo, 'venta facturada fuera del periodo', 'ventas facturadas fuera del periodo')}`].filter(Boolean) : [];
+      form = `<div class="cc-form">
+        <div class="form-grid">
+          <label class="field"><span>Aliado</span><select data-ccsel="cliente"><option value="">Elige el aliado…</option>${aliados.map((a) => `<option value="${esc(a.id)}"${C.cliente === a.id ? ' selected' : ''}>${esc(a.nombre || a.contacto)}</option>`).join('')}</select></label>
+          <label class="field"><span>Desde (fecha de factura)</span><input type="date" data-ccsel="desde" value="${esc(C.desde)}"></label>
+          <label class="field"><span>Hasta (fecha de corte)</span><input type="date" data-ccsel="hasta" value="${esc(C.hasta)}" max="${fechaEn(miTz())}"></label>
+        </div>
+        ${c && falta.length ? `<div class="notice warn">${ico('alerta')}<span>En AppSheet a este aliado le falta: <b>${esc(falta.join(', '))}</b>. ${falta.includes('% de comisión') || falta.includes('modalidad «Retorno»') ? 'Sin eso no hay ventas para cobrar.' : 'El documento sale con esos datos en blanco.'} Complétalo en la hoja CLIENTES y toca «Actualizar».</span></div>` : ''}
+        ${c ? (el.ok.length ? `<div class="tablewrap"><table class="cc-ventas"><thead><tr><th></th><th>Reserva</th><th>Factura</th><th>Fecha factura</th><th>Destino</th><th class="num">Comisión</th></tr></thead><tbody>
+            ${el.ok.map((v) => `<tr><td><input type="checkbox" data-ccventa="${esc(v.id)}"${C.quitadas.has(v.id) ? '' : ' checked'} aria-label="Incluir ${esc(v.codigo || v.id)}"></td><td><b>${esc(v.codigo || v.id)}</b></td><td>${esc(v.factura)}</td><td>${esc(fechaCorta(v.fecha_factura))}</td><td>${esc([v.destino, v.plan].filter(Boolean).join(' · '))}</td><td class="num">${plata(v.comision)}</td></tr>`).join('')}
+            </tbody></table></div>` : `<p class="hint">No hay ventas para cobrar de este aliado en el periodo.</p>`) : '<p class="hint">Elige el aliado y el periodo: aparecen sus ventas facturadas, en modalidad Retorno y aún sin cobrar.</p>'}
+        ${notas.length ? `<p class="hint">No entran: ${esc(notas.join(' · '))}.</p>` : ''}
+        <div class="acc"><button type="button" class="btn" data-cc="generar"${!sel.length || S.ocupado ? ' disabled' : ''}>${ico('documento')}Generar cuenta de cobro${sel.length ? ` · ${plural(sel.length, 'venta', 'ventas')} · ${plata(total)}` : ''}</button><button type="button" class="btn txt" data-cc="cerrar">Cancelar</button></div>
+      </div>`;
+    }
+    const filas = D.cuentas.map((k) => {
+      const e = CC.ESTADOS[k.estado] || { nombre: k.estado, cls: 'mute' }, conf = C.confirmar && C.confirmar.id === k.id ? C.confirmar.estado : null;
+      const acc = conf ? `<span class="hint">${conf === 'anulada' ? '¿Anularla? Sus ventas quedan libres.' : conf === 'pagada' ? '¿Marcar como pagada?' : '¿Marcar como enviada?'}</span><button type="button" class="btn sm" data-ccestado="${conf}" data-ccid="${k.id}"${ocupado('cc')}>Sí</button><button type="button" class="btn txt sm" data-cc="no">No</button>`
+        : `<button type="button" class="btn ghost sm" data-ccpdf="${k.id}">${ico('descargar')}PDF</button>
+           ${k.estado === 'generada' ? `<button type="button" class="btn txt sm" data-ccpedir="enviada" data-ccid="${k.id}">Enviada</button>` : ''}
+           ${k.estado === 'generada' || k.estado === 'enviada' ? `<button type="button" class="btn txt sm" data-ccpedir="pagada" data-ccid="${k.id}">Pagada</button><button type="button" class="btn txt sm" data-ccpedir="anulada" data-ccid="${k.id}">Anular</button>` : ''}`;
+      return `<tr><td><b>${esc(k.numero)}</b><small class="hint">${k.origen === 'aliado' ? 'Generada por el aliado' : 'Generada por Caminos'} · ${esc(fechaCorta(k.creada.slice(0, 10)))}</small></td>
+        <td>${esc(cliente(k.cliente_id).nombre || k.cliente_id)}</td><td>${esc(CC.periodo(k.desde, k.hasta))}</td><td class="num">${k.ventas}</td><td class="num">${plata(k.total)}</td>
+        <td><span class="chip ${e.cls} xs">${esc(e.nombre)}</span></td><td><div class="acc">${acc}</div></td></tr>`;
+    }).join('');
+    const pendiente = D.cuentas.filter((k) => k.estado === 'generada' || k.estado === 'enviada').reduce((s2, k) => s2 + (+k.total || 0), 0);
+    return gesTarjeta('Cuentas de cobro de aliados', `La comisión de varias ventas en un solo documento${pendiente ? ` · por pagar ${plata(pendiente)}` : ''}`,
+      form + (D.cuentas.length ? `<div class="tablewrap"><table class="cc-lista"><thead><tr><th>Número</th><th>Aliado</th><th>Periodo</th><th class="num">Ventas</th><th class="num">Total</th><th>Estado</th><th>Acciones</th></tr></thead><tbody>${filas}</tbody></table></div>` : (C.abierto ? '' : '<p class="gvacio">Aún no hay cuentas de cobro. Los aliados también pueden generarlas desde su portal.</p>')),
+      'gcc', C.abierto ? '' : `<div class="acc"><button type="button" class="btn sm" data-cc="nueva">${ico('mas')}Nueva cuenta de cobro</button></div>`);
+  }
+  async function generarCuentaCobro() {
+    const C = S.ges.cc, D = C.datos, c = D.clientes.find((x) => x.id === C.cliente);
+    const ids = window.CuentaCobro.elegibles(D.ventas, c, C.desde, C.hasta, D.cobradas).ok.filter((v) => !C.quitadas.has(v.id)).map((v) => v.id);
+    await accion('cc', async () => {
+      const r = await q(sb.rpc('generar_cuenta_cobro', { p_cliente: C.cliente, p_desde: C.desde, p_hasta: C.hasta, p_ventas: ids }));
+      await cargarCuentasCobro();
+      Object.assign(C, { abierto: false, cliente: '', quitadas: new Set() });
+      toast(`Cuenta de cobro ${r.numero} generada. Toca «PDF» para descargarla.`);
+    });
+  }
+
   // Conexión con el gestor de reservas (solo administración)
   function gesConexion() {
     const G = S.ges, e = G.estado || {};
@@ -2338,6 +2415,7 @@
         <div class="gfila">
           ${gesTarjeta('Próximas salidas', 'Ventas efectivas con fecha de viaje desde hoy, con su saldo por cobrar', gesSalidas())}
         </div>
+        ${gesCuentasCobro()}
         ${gesTarjeta('Detalle de ventas', `${plural(rows.length, 'venta', 'ventas')} con los filtros actuales`, gesDetalle(), 'gdet',
           `<div class="acc"><button type="button" class="btn ghost sm" data-accion="gesDetalle">${ico('hoja')}${G.detalle ? 'Ocultar detalle' : 'Ver detalle'}</button><button type="button" class="btn ghost sm" data-accion="gesExportar">${ico('descargar')}Exportar a Excel</button></div>`)}
         ${gesConexion()}
@@ -3950,7 +4028,7 @@
   }
 
   // ---------- Eventos ----------
-  const ACCIONES = '[data-view],[data-accion],[data-marcar],[data-semana],[data-mvista],[data-editar],[data-leer],[data-comf],[data-borrarcom],[data-lb],[data-lbmover],[data-quitarimg],[data-revisar],[data-cancelarsol],[data-lbsol],[data-quitarsop],[data-revquitar],[data-selinf],[data-orden],[data-restablecer],[data-activar],[data-copiar],[data-guia],[data-soltipo],[data-confirmar],[data-demo],[data-gvista],[data-gver],[data-gabrir],[data-gmover],[data-gmes],[data-gborrar],[data-tcfiltro],[data-tcpest],[data-tcpaso],[data-tcfiltrog],[data-gfiltro],[data-gmesf],[data-gquitar],[data-gmedida],[data-gorden],[data-eqpest],[data-cx],[data-cxpedir]';
+  const ACCIONES = '[data-view],[data-accion],[data-marcar],[data-semana],[data-mvista],[data-editar],[data-leer],[data-comf],[data-borrarcom],[data-lb],[data-lbmover],[data-quitarimg],[data-revisar],[data-cancelarsol],[data-lbsol],[data-quitarsop],[data-revquitar],[data-selinf],[data-orden],[data-restablecer],[data-activar],[data-copiar],[data-guia],[data-soltipo],[data-confirmar],[data-demo],[data-gvista],[data-gver],[data-gabrir],[data-gmover],[data-gmes],[data-gborrar],[data-tcfiltro],[data-tcpest],[data-tcpaso],[data-tcfiltrog],[data-gfiltro],[data-gmesf],[data-gquitar],[data-gmedida],[data-gorden],[data-eqpest],[data-cx],[data-cxpedir],[data-cc],[data-ccpdf],[data-ccpedir],[data-ccestado]';
 
   document.addEventListener('click', async (ev) => {
     if (fichaG.id && !(ev.target.closest && (ev.target.closest('#gficha') || ev.target.closest('[data-gver]')))) {
@@ -4311,6 +4389,26 @@
       return;
     }
     if (d.eqpest) { S.equipo.pest = d.eqpest; render(); return; }
+    if (d.cc) {
+      const C = S.ges.cc;
+      if (d.cc === 'nueva') Object.assign(C, mesAnteriorRango(), { abierto: true, cliente: '', quitadas: new Set(), confirmar: null });
+      else if (d.cc === 'cerrar') C.abierto = false;
+      else if (d.cc === 'no') C.confirmar = null;
+      else if (d.cc === 'generar') { await generarCuentaCobro(); return; }
+      render();
+      return;
+    }
+    if (d.ccpdf) { const k = S.ges.cc.datos.cuentas.find((x) => String(x.id) === d.ccpdf); if (k) window.CuentaCobro.abrir(k); return; }
+    if (d.ccpedir) { S.ges.cc.confirmar = { id: +d.ccid, estado: d.ccpedir }; render(); return; }
+    if (d.ccestado) {
+      await accion('cc', async () => {
+        await q(sb.rpc('estado_cuenta_cobro', { p_id: +d.ccid, p_estado: d.ccestado }));
+        S.ges.cc.confirmar = null;
+        await cargarCuentasCobro();
+        toast(d.ccestado === 'anulada' ? 'Cuenta de cobro anulada: sus ventas quedaron libres.' : d.ccestado === 'pagada' ? 'Marcada como pagada.' : 'Marcada como enviada.');
+      });
+      return;
+    }
     if (d.cxpedir) { S.equipo.confirmarCx = { id: d.cxid, accion: d.cxpedir }; render(); return; }
     if (d.cx) {
       if (d.cx === 'no') { S.equipo.confirmarCx = null; render(); return; }
@@ -4500,6 +4598,8 @@
   document.addEventListener('change', async (ev) => {
     const el = ev.target, d = el.dataset || {};
     if (d.gsel) { S.ges.f[d.gsel] = el.value; render(); return; }
+    if (d.ccsel) { S.ges.cc[d.ccsel] = el.value; if (d.ccsel === 'cliente') S.ges.cc.quitadas = new Set(); render(); return; }
+    if (d.ccventa) { const Q = S.ges.cc.quitadas; if (el.checked) Q.delete(d.ccventa); else Q.add(d.ccventa); render(); return; }
     if (d.tcsel) {
       if (d.tcsel === 'tarjeta') { S.tc.tarjeta = +el.value; S.tc.extracto = null; } else S.tc.extracto = +el.value;
       Object.assign(S.tc, { abierto: null, confirmar: null, borrar: null, filtro: 'todos', q: '' });

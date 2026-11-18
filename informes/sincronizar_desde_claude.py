@@ -190,7 +190,11 @@ def construir_extranet(t):
         clientes[cid] = {'id': cid[:60], 'nombre': texto(f('Nombre_Empresa'))[:160], 'contacto': texto(f('Contacto'))[:160],
                          'correo': texto(f('Email')).lower()[:200], 'tipo': texto(f('Tipo_Cliente'))[:60],
                          'pct_terrestre': pct(f('Pct_Comision_Terrestre')), 'part_ta': pct(f('Part_TA_Aliado')),
-                         'modalidad': texto(f('Modalidad_Comision_Default'))[:60]}
+                         'modalidad': texto(f('Modalidad_Comision_Default'))[:60],
+                         'nit': texto(f('NIT'))[:40], 'direccion': texto(f('Direccion'))[:200], 'ciudad': texto(f('Ciudad'))[:80],
+                         'telefono': texto(f('Telefono'))[:60], 'banco': texto(f('Banco'))[:80], 'tipo_cuenta': texto(f('Tipo_Cuenta'))[:40],
+                         'numero_cuenta': texto(f('Numero_Cuenta'))[:40], 'titular_cuenta': texto(f('Titular_Cuenta'))[:160],
+                         'documento_titular': texto(f('Documento_Titular'))[:40]}
     nombres = {texto(f('ID_Pasajero')): texto(f('Nombre_Completo')) for f in recorrer(t['pasajeros']) if texto(f('ID_Pasajero'))}
     planes = indice(t['costeos'], ['ID_Costeo'], ['Nombre_Plan'])
     por_venta = {}
@@ -240,6 +244,9 @@ def construir_extranet(t):
             'viajeros': viajeros,
             'servicios': [{'tipo': k[0][:60], 'detalle': k[1], 'cantidad': n} for k, n in s['serv'].items()],
             'valor': redondo(s['valor']), 'cobrado': redondo(cobrado.get(vid, 0.0)), 'comision': redondo(comision),
+            'codigo': texto(f('Codigo_Visual_VYE'))[:40], 'factura': texto(f('Numero_Factura'))[:60],
+            'fecha_factura': fecha(f('Fecha_Facturacion')) if texto(f('Numero_Factura')) else None,
+            'modalidad': texto(f('Modalidad_Comision'))[:60],
         })
     cobros = []
     for f in recorrer(t['cobros']):

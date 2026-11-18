@@ -80,7 +80,7 @@
     grupos: [], equipos: [],
     tc_tarjetas: [], tc_categorias: [], tc_extractos: [], tc_registros: [], tc_movimientos: [],
     ventas_informe: [], ventas_estado: [],
-    clientes_ext: [], ventas_cliente: [], cobros_cliente: [], cuentas_cliente: [],
+    clientes_ext: [], ventas_cliente: [], cobros_cliente: [], cuentas_cliente: [], cuentas_cobro: [], cuentas_cobro_ventas: [],
   };
   // IP con la que «llega» el navegador de la demostración y llaves de los computadores autorizados
   const IP_DEMO = '190.25.14.7';
@@ -368,13 +368,14 @@
 
   // Extranet: clientes de ejemplo de AppSheet (ficticios). Ricardo ya tiene cuenta.
   const CLIENTES_DEMO = [
-    { id: 'cli-ricardo', nombre: 'Ricardo Ejemplo Viajes', contacto: 'Ricardo Ejemplo', correo: 'ricardo.aliado@cliente.example', tipo: 'Freelance', pct_terrestre: 0.1, part_ta: 0.5, modalidad: 'Retorno', usuario: 'c1000000-0000-4000-8000-000000000001' },
+    { id: 'cli-ricardo', nombre: 'Ricardo Ejemplo Viajes', contacto: 'Ricardo Ejemplo', correo: 'ricardo.aliado@cliente.example', tipo: 'Freelance', pct_terrestre: 0.1, part_ta: 0.5, modalidad: 'Retorno', usuario: 'c1000000-0000-4000-8000-000000000001',
+      nit: '79.123.456-7', direccion: 'Calle de ejemplo # 1-23', ciudad: 'Bogotá', telefono: '300 000 0000', banco: 'Banco de ejemplo', tipo_cuenta: 'Ahorros', numero_cuenta: '000-000000-00', titular_cuenta: '', documento_titular: '' },
     { id: 'cli-sanpedro', nombre: 'Parroquia San Pedro (ejemplo)', contacto: 'Padre Andrés Ejemplo', correo: 'parroquia.sanpedro@cliente.example', tipo: 'PARROQUIA', pct_terrestre: null, part_ta: null, modalidad: '' },
     { id: 'cli-andinos', nombre: 'Viajes Andinos (ejemplo)', contacto: 'Marta Ejemplo', correo: '', tipo: 'Freelance', pct_terrestre: null, part_ta: null, modalidad: '' },
   ];
   (function sembrarExtranet() {
     CLIENTES_DEMO.forEach((c) => {
-      const x = Object.assign({}, c); delete x.usuario;
+      const x = Object.assign({ nit: '', direccion: '', ciudad: '', telefono: '', banco: '', tipo_cuenta: '', numero_cuenta: '', titular_cuenta: '', documento_titular: '' }, c); delete x.usuario;
       db.clientes_ext.push(x);
       if (c.usuario) {
         usuarios.push({ id: c.usuario, email: c.correo, password: CLAVE_DEMO, banned: false, user_metadata: { extranet: true } });
@@ -385,10 +386,15 @@
       const fecha = sumarDias(HOY, -dias), salida = sumarDias(HOY, salidaDias);
       const terrestre = servicios.filter((x) => x.tipo === 'Plan Terrestre').length ? valor * 0.55 : 0;
       const comision = cli === 'cli-ricardo' && (estado === 'Confirmada' || estado === 'Facturado') ? Math.round(terrestre * 0.1 + 70000 * 0.5 * servicios.filter((x) => x.tipo === 'Vuelo').length) : 0;
+      const n = db.ventas_cliente.length + 1;
       db.ventas_cliente.push({ id, cliente_id: cli, fecha, estado, tipo_venta: cli === 'cli-sanpedro' ? 'Religioso' : 'Mayorista', tipo_viaje: viaje, destino, plan: plan || '',
-        salida, regreso: sumarDias(salida, noches), pasajeros: viajeros.length, viajeros, servicios, valor, cobrado: pagado, comision });
+        salida, regreso: sumarDias(salida, noches), pasajeros: viajeros.length, viajeros, servicios, valor, cobrado: pagado, comision,
+        codigo: 'CA' + (3000 + n), factura: estado === 'Facturado' ? 'FE-' + (500 + n) : '', fecha_factura: estado === 'Facturado' ? FACTURA[id] || sumarDias(fecha, 4) : null, modalidad: '' });
     };
     const vuelo = (r) => ({ tipo: 'Vuelo', detalle: r, cantidad: 1 });
+    // Facturas: dos del mes anterior (para la cuenta de cobro de ejemplo) y una de este mes
+    const mesAnt = new Date(Date.UTC(+HOY.slice(0, 4), +HOY.slice(5, 7) - 2, 1)).toISOString().slice(0, 7);
+    const FACTURA = { 'VC-0101': mesAnt + '-04', 'VC-0102': mesAnt + '-12', 'VC-0105': HOY.slice(0, 7) + '-01' };
     V('VC-0101', 'cli-ricardo', 75, 'Facturado', 'Punta Cana', 'Internacional', -20, 5, ['Laura Ejemplo', 'Andrés Ejemplo'], 9840000, 9840000, [vuelo('BOG-PUJ-BOG · Wingo'), { tipo: 'Plan Terrestre', detalle: 'Todo incluido · Doble', cantidad: 1 }, { tipo: 'Asistencia', detalle: '', cantidad: 2 }]);
     V('VC-0102', 'cli-ricardo', 60, 'Facturado', 'Cartagena', 'Nacional', -8, 3, ['Camilo Ejemplo', 'Sara Ejemplo', 'Tomás Ejemplo'], 4620000, 4620000, [vuelo('BOG-CTG-BOG · Avianca'), { tipo: 'Hotel', detalle: 'Hotel ejemplo Bocagrande · Triple', cantidad: 1 }]);
     V('VC-0103', 'cli-ricardo', 40, 'Cancelada', 'San Andrés', 'Nacional', 30, 4, ['Julia Ejemplo'], 3150000, 0, [vuelo('BOG-ADZ-BOG'), { tipo: 'Plan Terrestre', detalle: 'Doble', cantidad: 1 }]);
@@ -397,8 +403,6 @@
     V('VC-0106', 'cli-ricardo', 9, 'Confirmada', 'Lima y Cusco', 'Internacional', 48, 7, ['Ricardo Ejemplo', 'Elena Ejemplo'], 14900000, 3000000, [vuelo('BOG-LIM-CUZ-BOG · LATAM'), { tipo: 'Plan Terrestre', detalle: 'Circuito Machu Picchu · Doble', cantidad: 1 }, { tipo: 'Asistencia', detalle: '', cantidad: 2 }]);
     V('VC-0107', 'cli-ricardo', 3, 'Cotizado', 'Panamá', 'Internacional', 60, 4, ['Marco Ejemplo'], 3480000, 0, [vuelo('BOG-PTY-BOG')]);
     V('VC-0201', 'cli-sanpedro', 50, 'Facturado', 'Las Lajas', 'Nacional', 15, 3, ['Grupo parroquial (30 peregrinos)'], 36000000, 24000000, [{ tipo: 'Plan Terrestre', detalle: 'Bus + hotel · Doble', cantidad: 1 }], 'Peregrinación a Las Lajas');
-    db.cobros_cliente.push({ id: 'CC-01', cliente_id: 'cli-ricardo', periodo: 'Mes anterior', desde: sumarDias(HOY, -60), hasta: sumarDias(HOY, -31), ventas: 2, total: 495000, estado: 'Pagada', enviada: sumarDias(HOY, -28) });
-    db.cobros_cliente.push({ id: 'CC-02', cliente_id: 'cli-ricardo', periodo: 'Este mes', desde: sumarDias(HOY, -30), hasta: sumarDias(HOY, -1), ventas: 1, total: 352000, estado: 'Enviada', enviada: sumarDias(HOY, -1) });
   })();
   SERIAL.forEach((t) => { sigId[t] = db[t].reduce((m, r) => Math.max(m, r.id || 0), 0) + 1; });
 
@@ -447,6 +451,8 @@
     ventas_cliente: (r) => esGerencia() || r.cliente_id === miCliente(),
     cobros_cliente: (r) => esGerencia() || r.cliente_id === miCliente(),
     cuentas_cliente: (r) => esAdmin() || r.usuario_id === uid(),
+    cuentas_cobro: (r) => esGerencia() || r.cliente_id === miCliente(),
+    cuentas_cobro_ventas: (r) => { const k = db.cuentas_cobro.find((x) => x.id === r.cuenta_id); return !!k && (esGerencia() || k.cliente_id === miCliente()); },
     herramientas: (r) => esGerencia() || (r.activo && (!r.areas_visibles || r.areas_visibles.includes((yo() || {}).area_id))),
   };
   // Reglas de escritura (USING y WITH CHECK)
@@ -778,6 +784,48 @@
     es_admin() { return esAdmin(); },
     puede_gestionar_cuentas() { return gestionaCuentas(); },
     malla_efectiva({ p_desde, p_hasta }) { return yo() ? mallaEfectiva(p_desde, p_hasta) : []; },
+    generar_cuenta_cobro({ p_cliente, p_desde, p_hasta, p_ventas }) {
+      let origen;
+      if (esGerencia()) origen = 'caminos'; else if (miCliente() && miCliente() === p_cliente) origen = 'aliado'; else throw err('No puedes generar cuentas de cobro de este cliente.');
+      const c = db.clientes_ext.find((x) => x.id === p_cliente);
+      if (!c) throw err('Ese cliente no está en AppSheet.');
+      if (!p_desde || !p_hasta || p_hasta < p_desde) throw err('Revisa el periodo: la fecha de corte no puede ser antes del inicio.');
+      if (p_hasta > HOY) throw err('La fecha de corte no puede ser futura.');
+      const ids = p_ventas || [];
+      if (!ids.length) throw err('Elige al menos una venta.');
+      const lineas = [];
+      for (const id of ids) {
+        const v = db.ventas_cliente.find((x) => x.id === id);
+        if (!v) throw err('Alguna de las ventas elegidas no existe.');
+        const cod = v.codigo || v.id;
+        if (v.cliente_id !== p_cliente) throw err(`La venta ${cod} no es de este cliente.`);
+        if (v.estado !== 'Facturado' || !String(v.factura).trim()) throw err(`La venta ${cod} no está facturada con número de factura.`);
+        if (String(v.modalidad || c.modalidad || '').trim().toLowerCase() !== 'retorno') throw err(`La venta ${cod} no es de modalidad Retorno: no va en cuenta de cobro.`);
+        if (!v.fecha_factura || v.fecha_factura < p_desde || v.fecha_factura > p_hasta) throw err(`La venta ${cod} no se facturó dentro del periodo.`);
+        if (!(v.comision > 0)) throw err(`La venta ${cod} no tiene comisión.`);
+        if (db.cuentas_cobro_ventas.some((x) => x.venta_id === v.id)) throw err(`La venta ${cod} ya está en otra cuenta de cobro.`);
+        lineas.push({ venta: v.id, codigo: v.codigo, factura: v.factura, fecha_factura: v.fecha_factura, destino: v.destino, plan: v.plan, comision: v.comision });
+      }
+      const id = db.cuentas_cobro.reduce((m, k) => Math.max(m, k.id), 0) + 1;
+      const total = lineas.reduce((s2, l) => s2 + l.comision, 0);
+      const numero = `CC-${p_hasta.slice(0, 4)}${p_hasta.slice(5, 7)}-${String(id).padStart(4, '0')}`;
+      const cli = {}; ['nombre', 'contacto', 'nit', 'direccion', 'ciudad', 'telefono', 'correo', 'banco', 'tipo_cuenta', 'numero_cuenta', 'titular_cuenta', 'documento_titular', 'modalidad'].forEach((k) => { cli[k] = c[k] || ''; });
+      db.cuentas_cobro.push({ id, numero, cliente_id: p_cliente, desde: p_desde, hasta: p_hasta, total, ventas: lineas.length, estado: 'generada', origen, datos: { cliente: cli, lineas }, creada: ahoraISO(), creada_por: uid(), actualizada: ahoraISO() });
+      lineas.forEach((l) => db.cuentas_cobro_ventas.push({ cuenta_id: id, venta_id: l.venta, comision: l.comision }));
+      avisarCambio('cuentas_cobro');
+      return { id, numero, total, ventas: lineas.length };
+    },
+    estado_cuenta_cobro({ p_id, p_estado }) {
+      const k = db.cuentas_cobro.find((x) => x.id === p_id);
+      if (!k) throw err('No existe esa cuenta de cobro.');
+      if (!esGerencia() && (miCliente() !== k.cliente_id || p_estado !== 'anulada' || k.estado !== 'generada')) throw err('Solo puedes anular tus cuentas de cobro que aún no se han enviado.');
+      if (k.estado === 'anulada') throw err('La cuenta de cobro ya está anulada.');
+      if (k.estado === 'pagada' && p_estado !== 'pagada') throw err('Una cuenta de cobro pagada ya no cambia.');
+      k.estado = p_estado; k.actualizada = ahoraISO();
+      if (p_estado === 'anulada') db.cuentas_cobro_ventas = db.cuentas_cobro_ventas.filter((x) => x.cuenta_id !== p_id);
+      avisarCambio('cuentas_cobro');
+      return null;
+    },
     mi_cuenta_cliente() {
       const c = db.cuentas_cliente.find((x) => x.usuario_id === uid());
       if (!c) return null;

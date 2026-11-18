@@ -68,7 +68,8 @@
   async function q(p) { const { data, error } = await p; if (error) throw error; return data; }
 
   // ---------- Estado ----------
-  const C = { pantalla: 'cargando', error: '', ocupado: '', correo: '', cuenta: null, ventas: [], cobros: [], filtro: 'todas', busca: '', abierta: null, enviado: false, recuperacion: false };
+  const C = { pantalla: 'cargando', error: '', ocupado: '', correo: '', cuenta: null, ficha: null, ventas: [], cobros: [], cuentas: [], cobradas: new Set(), filtro: 'todas', busca: '', abierta: null, enviado: false, recuperacion: false,
+    cc: { abierto: false, desde: '', hasta: '', quitadas: new Set(), confirmar: null, msg: null } };
   const ocupado = (k) => (C.ocupado === k ? ' disabled aria-busy="true"' : C.ocupado ? ' disabled' : '');
 
   // ---------- Pantallas de acceso ----------
@@ -178,9 +179,7 @@
     const lista = filtradas().sort((a, b) => (b.salida || b.fecha).localeCompare(a.salida || a.fecha));
     const kpi = (titulo, val, sub, cls) => `<div class="cx-kpi${cls ? ' ' + cls : ''}"><span>${titulo}</span><b>${val}</b>${sub ? `<small>${sub}</small>` : ''}</div>`;
     const sinc = c.sincronizado ? new Date(c.sincronizado) : null;
-    const cobros = C.cobros.length ? `<section class="card cx-cobros"><h2>${ico('documento')}Tus cuentas de cobro</h2>
-        <div class="tablewrap"><table><thead><tr><th>Periodo</th><th>Del</th><th>Al</th><th class="num">Ventas</th><th class="num">Comisión</th><th>Estado</th></tr></thead>
-        <tbody>${C.cobros.map((k) => `<tr><td>${esc(k.periodo)}</td><td>${fecha(k.desde)}</td><td>${fecha(k.hasta)}</td><td class="num">${k.ventas}</td><td class="num">${plata(k.total)}</td><td><span class="chip ${/pag/i.test(k.estado) ? 'ok' : 'info'}">${esc(k.estado || '—')}</span></td></tr>`).join('')}</tbody></table></div></section>` : '';
+    const cobros = seccionCobros();
     return `<header class="top"><div class="wrap top-in">
         <span class="brand"><img src="${MARCA.logo}" alt="${MARCA.nombre}"><span>Portal de clientes</span></span>
         ${CFG.demo ? '<span class="demo-tag">Demostración</span>' : ''}
@@ -213,6 +212,67 @@
         <p class="cx-nota">${ico('escudo')}Solo tú ves esta información. Si algo no coincide, escríbele a tu asesora de ${MARCA.nombre}.</p>
       </main>
       <footer class="foot-site"><div class="wrap"><span><b>${MARCA.nombre}</b> — ${MARCA.lema}</span><span>${esc(MARCA.direccion)} · ${MARCA.web}</span></div></footer>`;
+  }
+
+  // ---------- Cuentas de cobro (aliados) ----------
+  // El aliado junta la comisión de varias ventas en un solo documento. Las reglas
+  // las vuelve a revisar la base al generarla (generar_cuenta_cobro).
+  const esAliado = () => !!(C.cuenta && (C.cuenta.comision || /freelance|aliad/i.test(C.cuenta.tipo || '')));
+  function rangoMesAnterior() {
+    const h = hoy(), d = new Date(Date.UTC(+h.slice(0, 4), +h.slice(5, 7) - 2, 1)), m = d.toISOString().slice(0, 7);
+    return { desde: m + '-01', hasta: m + '-' + String(new Date(Date.UTC(+m.slice(0, 4), +m.slice(5, 7), 0)).getUTCDate()).padStart(2, '0') };
+  }
+  function seccionCobros() {
+    const CC = window.CuentaCobro, K = C.cc;
+    if (!esAliado() && !C.cuentas.length && !C.cobros.length) return '';
+    const ficha = Object.assign({ id: C.cuenta.cliente_id, modalidad: C.cuenta.modalidad }, C.ficha || {});
+    let form = '';
+    if (K.abierto) {
+      const el = CC.elegibles(C.ventas, ficha, K.desde, K.hasta, C.cobradas);
+      const sel = el.ok.filter((v) => !K.quitadas.has(v.id)), total = sel.reduce((s2, v) => s2 + v.comision, 0);
+      const falta = CC.faltantes(ficha), r = el.razones;
+      const notas = [r.sinComision && plural(r.sinComision, 'venta sin comisión calculada', 'ventas sin comisión calculada'), r.descuento && `${plural(r.descuento, 'venta', 'ventas')} en otra modalidad`, r.sinFactura && plural(r.sinFactura, 'venta sin número de factura', 'ventas sin número de factura'), r.cobradas && plural(r.cobradas, 'venta ya cobrada', 'ventas ya cobradas'), r.fueraPeriodo && plural(r.fueraPeriodo, 'venta facturada fuera del periodo', 'ventas facturadas fuera del periodo')].filter(Boolean);
+      form = `<div class="cx-ccform">
+        <div class="cx-ccfechas"><label class="field"><span>Desde (fecha de factura)</span><input type="date" data-cc="desde" value="${esc(K.desde)}"></label>
+          <label class="field"><span>Hasta (fecha de corte)</span><input type="date" data-cc="hasta" value="${esc(K.hasta)}" max="${hoy()}"></label></div>
+        ${falta.length ? `<p class="notice warn">${ico('alerta')}<span>A tus datos en ${MARCA.nombre} les falta: <b>${esc(falta.join(', '))}</b>. Pídele a tu asesora que los complete${falta.includes('% de comisión') || falta.includes('modalidad «Retorno»') ? '; sin eso no hay ventas para cobrar' : ''}.</span></p>` : ''}
+        ${el.ok.length ? `<ul class="cx-ccventas">${el.ok.map((v) => `<li><label><input type="checkbox" data-ccventa="${esc(v.id)}"${K.quitadas.has(v.id) ? '' : ' checked'}><span><b>${esc(v.codigo || v.id)} · ${esc(v.destino)}</b><small>Factura ${esc(v.factura)} · ${esc(fecha(v.fecha_factura))}</small></span><b class="cx-ccval">${plata(v.comision)}</b></label></li>`).join('')}</ul>`
+          : '<p class="hint">No tienes ventas para cobrar en este periodo: deben estar facturadas, con número de factura, en modalidad Retorno y sin una cuenta de cobro anterior.</p>'}
+        ${notas.length ? `<p class="hint">No entran: ${esc(notas.join(' · '))}.</p>` : ''}
+        ${K.msg && K.msg.tipo === 'bad' ? `<p class="err" role="alert">${ico('alerta')}${esc(K.msg.texto)}</p>` : ''}
+        <div class="cx-ccacc"><button type="button" class="btn" data-a="ccgenerar"${!sel.length || C.ocupado ? ' disabled' : ''}>${ico('documento')}Generar${sel.length ? ` · ${plural(sel.length, 'venta', 'ventas')} · ${plata(total)}` : ''}</button><button type="button" class="btn txt" data-a="cccerrar">Cancelar</button></div>
+      </div>`;
+    }
+    const filas = C.cuentas.map((k) => {
+      const e = CC.ESTADOS[k.estado] || { nombre: k.estado, cls: 'mute' }, conf = K.confirmar === k.id;
+      return `<tr><td><b>${esc(k.numero)}</b></td><td>${esc(CC.periodo(k.desde, k.hasta))}</td><td class="num">${k.ventas}</td><td class="num">${plata(k.total)}</td><td><span class="chip ${e.cls}">${esc(e.nombre)}</span></td>
+        <td><div class="cx-ccacc">${conf ? `<span class="hint">¿Anularla?</span><button type="button" class="btn sm" data-ccanular="${k.id}"${C.ocupado ? ' disabled' : ''}>Sí</button><button type="button" class="btn txt sm" data-a="ccno">No</button>`
+          : `<button type="button" class="btn ghost sm" data-ccpdf="${k.id}">${ico('documento')}PDF</button>${k.estado === 'generada' ? `<button type="button" class="btn txt sm" data-ccpedir="${k.id}">Anular</button>` : ''}`}</div></td></tr>`;
+    }).join('');
+    const appsheet = C.cobros.length ? `<h3 class="cx-ccsub">Registradas en el gestor de reservas</h3><div class="tablewrap"><table><thead><tr><th>Periodo</th><th>Del</th><th>Al</th><th class="num">Ventas</th><th class="num">Comisión</th><th>Estado</th></tr></thead>
+        <tbody>${C.cobros.map((k) => `<tr><td>${esc(k.periodo)}</td><td>${fecha(k.desde)}</td><td>${fecha(k.hasta)}</td><td class="num">${k.ventas}</td><td class="num">${plata(k.total)}</td><td><span class="chip ${/pag/i.test(k.estado) ? 'ok' : 'info'}">${esc(k.estado || '—')}</span></td></tr>`).join('')}</tbody></table></div>` : '';
+    return `<section class="card cx-cobros"><div class="cx-cch"><h2>${ico('documento')}Tus cuentas de cobro</h2>${esAliado() && !K.abierto ? `<button type="button" class="btn sm" data-a="ccnueva">${ico('documento')}Generar cuenta de cobro</button>` : ''}</div>
+      <p class="hint">Junta en un solo documento la comisión de varias ventas facturadas. Descárgalo en PDF, fírmalo y envíalo a ${MARCA.nombre}.</p>
+      ${K.msg && K.msg.tipo === 'ok' ? `<p class="notice ok">${esc(K.msg.texto)}</p>` : ''}
+      ${form}
+      ${C.cuentas.length ? `<div class="tablewrap"><table><thead><tr><th>Número</th><th>Periodo</th><th class="num">Ventas</th><th class="num">Comisión</th><th>Estado</th><th></th></tr></thead><tbody>${filas}</tbody></table></div>` : (K.abierto ? '' : '<p class="hint">Aún no tienes cuentas de cobro.</p>')}
+      ${appsheet}</section>`;
+  }
+  async function cargarCuentas() {
+    const [cuentas, cobradas, ficha] = await Promise.all([
+      q(sb.from('cuentas_cobro').select('*').order('creada', { ascending: false })),
+      q(sb.from('cuentas_cobro_ventas').select('venta_id')),
+      q(sb.from('clientes_ext').select('*')),
+    ]);
+    C.cuentas = cuentas || [];
+    C.cobradas = new Set((cobradas || []).map((x) => x.venta_id));
+    C.ficha = (ficha || [])[0] || null;
+  }
+  async function ccAccion(fn) {
+    if (C.ocupado) return;
+    C.ocupado = 'cc'; C.cc.msg = null; render();
+    try { await fn(); } catch (e) { C.cc.msg = { tipo: 'bad', texto: errorTexto(e) }; }
+    C.ocupado = ''; render();
   }
 
   // ---------- Render ----------
@@ -250,6 +310,7 @@
     ]);
     C.ventas = (ventas || []).map((v) => Object.assign({}, v, { valor: +v.valor || 0, cobrado: +v.cobrado || 0, comision: +v.comision || 0, viajeros: Array.isArray(v.viajeros) ? v.viajeros : [], servicios: Array.isArray(v.servicios) ? v.servicios : [] }));
     C.cobros = cobros || [];
+    try { await cargarCuentas(); } catch (e) { C.cuentas = []; }
     C.pantalla = 'portal';
   }
   async function arrancar() {
@@ -276,13 +337,14 @@
   }
   async function salir() {
     try { await sb.auth.signOut(); } catch (e) { /* igual se limpia */ }
-    Object.assign(C, { pantalla: 'login', cuenta: null, ventas: [], cobros: [], error: '', filtro: 'todas', busca: '', abierta: null, recuperacion: false });
+    Object.assign(C, { pantalla: 'login', cuenta: null, ficha: null, ventas: [], cobros: [], cuentas: [], cobradas: new Set(), error: '', filtro: 'todas', busca: '', abierta: null, recuperacion: false });
+    Object.assign(C.cc, { abierto: false, quitadas: new Set(), confirmar: null, msg: null });
     render();
   }
 
   // ---------- Eventos ----------
   document.addEventListener('click', async (ev) => {
-    const el = ev.target.closest('[data-a],[data-venta],[data-filtro],[data-demo]');
+    const el = ev.target.closest('[data-a],[data-venta],[data-filtro],[data-demo],[data-ccpdf],[data-ccpedir],[data-ccanular]');
     if (!el) return;
     const d = el.dataset;
     if (d.demo) { await entrar(d.demo, CFG.demo.clave); return; }
@@ -295,9 +357,39 @@
       return;
     }
     if (d.filtro) { C.filtro = d.filtro; C.abierta = null; render(); return; }
+    if (d.ccpdf) { const k = C.cuentas.find((x) => String(x.id) === d.ccpdf); if (k) window.CuentaCobro.abrir(k); return; }
+    if (d.ccpedir) { C.cc.confirmar = +d.ccpedir; render(); return; }
+    if (d.ccanular) {
+      await ccAccion(async () => {
+        await q(sb.rpc('estado_cuenta_cobro', { p_id: +d.ccanular, p_estado: 'anulada' }));
+        C.cc.confirmar = null;
+        await cargarCuentas();
+        C.cc.msg = { tipo: 'ok', texto: 'Cuenta de cobro anulada: sus ventas quedaron libres para otra.' };
+      });
+      return;
+    }
+    if (d.a === 'ccnueva') { Object.assign(C.cc, rangoMesAnterior(), { abierto: true, quitadas: new Set(), msg: null, confirmar: null }); render(); return; }
+    if (d.a === 'cccerrar') { C.cc.abierto = false; C.cc.msg = null; render(); return; }
+    if (d.a === 'ccno') { C.cc.confirmar = null; render(); return; }
+    if (d.a === 'ccgenerar') {
+      const K = C.cc, ficha = Object.assign({ id: C.cuenta.cliente_id, modalidad: C.cuenta.modalidad }, C.ficha || {});
+      const ids = window.CuentaCobro.elegibles(C.ventas, ficha, K.desde, K.hasta, C.cobradas).ok.filter((v) => !K.quitadas.has(v.id)).map((v) => v.id);
+      await ccAccion(async () => {
+        const r = await q(sb.rpc('generar_cuenta_cobro', { p_cliente: C.cuenta.cliente_id, p_desde: K.desde, p_hasta: K.hasta, p_ventas: ids }));
+        await cargarCuentas();
+        Object.assign(K, { abierto: false, quitadas: new Set() });
+        K.msg = { tipo: 'ok', texto: `Listo: cuenta de cobro ${r.numero} por ${plata(r.total)}. Toca «PDF» para descargarla, fírmala y envíala.` };
+      });
+      return;
+    }
     if (d.a === 'olvido') { C.pantalla = 'olvido'; C.enviado = false; C.error = ''; render(); return; }
     if (d.a === 'volver') { C.pantalla = 'login'; C.error = ''; render(); return; }
     if (d.a === 'salir') { await salir(); }
+  });
+  document.addEventListener('change', (ev) => {
+    const t = ev.target, d = t.dataset || {};
+    if (d.cc === 'desde' || d.cc === 'hasta') { C.cc[d.cc] = t.value; C.cc.msg = null; render(); return; }
+    if (d.ccventa) { if (t.checked) C.cc.quitadas.delete(d.ccventa); else C.cc.quitadas.add(d.ccventa); render(); }
   });
   document.addEventListener('input', (ev) => {
     if (ev.target.matches && ev.target.matches('[data-busca]')) { C.busca = ev.target.value; C.abierta = null; render(); }

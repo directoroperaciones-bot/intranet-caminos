@@ -65,7 +65,29 @@ const ok = (c, msg) => { if (c) console.log('OK    ' + msg); else { console.log(
   await page.fill('[data-busca]', '');
 
   // Cuentas de cobro
-  ok(await page.$$eval('.cx-cobros tbody tr', (t) => t.length) === 2, 'portal: ve sus cuentas de cobro');
+  ok((await page.textContent('.cx-cobros')).includes('Aún no tienes cuentas de cobro'), 'portal: el aliado ve su sección de cuentas de cobro');
+  await page.click('[data-a=ccnueva]');
+  ok(await page.$$eval('.cx-ccventas li', (l) => l.length) === 2, 'portal: propone las 2 ventas facturadas del mes anterior (Retorno, con factura, sin cobrar)');
+  await page.locator('.cx-ccventas input').nth(1).uncheck();
+  ok((await page.textContent('[data-a=ccgenerar]')).includes('1 venta'), 'portal: puede quitar ventas de la cuenta');
+  await page.locator('.cx-ccventas input').nth(1).check();
+  await page.click('[data-a=ccgenerar]');
+  await page.waitForSelector('.cx-cobros .notice.ok');
+  ok((await page.textContent('.cx-cobros .notice.ok')).includes('CC-'), 'portal: el aliado genera una cuenta de cobro con varias ventas');
+  ok(await page.$$eval('.cx-cobros tbody tr', (t) => t.length) === 1, 'portal: la cuenta aparece en su lista');
+  const [doc] = await Promise.all([page.waitForEvent('popup'), page.click('[data-ccpdf]')]);
+  await doc.waitForLoadState();
+  const txtDoc = await doc.textContent('body');
+  ok(txtDoc.includes('CUENTA DE COBRO No. CC-') && txtDoc.includes('AGENCIA DE VIAJES CAMINOS') && txtDoc.includes('79.123.456-7'), 'portal: el PDF trae número, deudor, acreedor y NIT (plantilla)');
+  ok(txtDoc.includes('TOTAL COMISIÓN DEL PERIODO') && txtDoc.includes('Banco de ejemplo') && txtDoc.includes('modalidad Retorno'), 'portal: el PDF trae total, forma de pago y observaciones');
+  await doc.close();
+  await page.click('[data-a=ccnueva]');
+  ok((await page.textContent('.cx-ccform')).includes('ya cobrada'), 'portal: las ventas ya cobradas no se vuelven a proponer');
+  await page.click('[data-a=cccerrar]');
+  await page.click('[data-ccpedir]');
+  await page.click('[data-ccanular]');
+  await page.waitForSelector('.cx-cobros .notice.ok');
+  ok((await page.textContent('.cx-cobros tbody')).includes('Anulada'), 'portal: el aliado anula su cuenta aún no enviada');
 
   // Seguridad: con su sesión no lee nada del equipo ni de otros clientes
   const lect = await page.evaluate(async () => {
