@@ -65,6 +65,9 @@
 
   // ---------- Datos sembrados ----------
   const HOY = fechaHoy();
+  // Destinatarios fijos del informe de la tarjeta (los mismos de la Edge Function)
+  const INFORME_PARA = ['financiero@agenciacaminos.com.co', 'director@agenciacaminos.com.co'];
+  const correosEnviados = [];
   const db = {
     sedes: [{ id: 1, nombre: 'Bogotá', zona_horaria: TZ, ips_oficina: [] }],
     areas: [{ id: 1, nombre: 'Gerencia' }, { id: 2, nombre: 'Ventas' }, { id: 3, nombre: 'Operaciones' }, { id: 4, nombre: 'Contabilidad' }],
@@ -86,7 +89,7 @@
     ],
     comunicados: [], comunicado_imagenes: [], comunicado_lecturas: [], solicitudes: [], solicitud_adjuntos: [], revisores: [],
     grupos: [], equipos: [], viaticos: [], viatico_gastos: [],
-    tc_tarjetas: [], tc_categorias: [], tc_extractos: [], tc_registros: [], tc_movimientos: [],
+    tc_tarjetas: [], tc_categorias: [], tc_extractos: [], tc_registros: [], tc_movimientos: [], tc_envios: [],
     ventas_informe: [], ventas_estado: [],
     clientes_ext: [], ventas_cliente: [], cobros_cliente: [], cuentas_cliente: [], cuentas_cobro: [], cuentas_cobro_ventas: [],
   };
@@ -323,6 +326,8 @@
     const exAnt = extracto(1, desdeAnt, corteAnt, 6200000, antMovs, 'cerrado');
     const cats = ['Tiquetes aéreos', 'Publicidad y marketing', null, 'Gastos bancarios'];
     antMovs.forEach((m, i) => mov(exAnt, m, { estado: 'conciliado', categoria_id: cats[i] ? CAT(cats[i]) : null }));
+    // El informe del periodo cerrado ya se envió a finanzas y dirección
+    db.tc_envios.push({ id: 1, extracto_id: exAnt.id, enviado_por: ID.andrea, enviado_en: sumarDias(exAnt.hasta, 4) + 'T16:30:00Z', destinatarios: INFORME_PARA.slice(), asunto: 'Conciliación tarjeta', nota: '', estado_extracto: 'cerrado', avance: 100, ok: true, error: null });
     // Periodo actual
     const movs = [
       [1, 'AVIANCA BOGOTA', 2845000], [3, 'LATAM AIRLINES CO', 1320400], [6, 'HOTEL ESTELAR CARTAGENA', 3150000],
@@ -510,7 +515,7 @@
     revisores: (r) => r.persona_id === uid() || esGerencia(),
     grupos: () => !!yo(),
     equipos: (r) => esGerencia() || lideraSede(r.sede_id),
-    tc_tarjetas: () => esGerencia(), tc_categorias: () => esGerencia(), tc_extractos: () => esGerencia(), tc_registros: () => esGerencia(), tc_movimientos: () => esGerencia(),
+    tc_tarjetas: () => esGerencia(), tc_categorias: () => esGerencia(), tc_extractos: () => esGerencia(), tc_registros: () => esGerencia(), tc_movimientos: () => esGerencia(), tc_envios: () => esGerencia(),
     ventas_informe: () => esGerencia(), ventas_estado: () => esGerencia(),
     // Las tablas del equipo solo las lee el personal activo (una cuenta de cliente no)
     sedes: () => !!yo(), areas: () => !!yo(), configuracion: () => !!yo(), turnos: () => !!yo(), malla: () => !!yo(),
@@ -556,6 +561,7 @@
     tc_tarjetas: () => esGerencia(), tc_categorias: () => esGerencia(), tc_registros: () => esGerencia(),
     tc_extractos: (r, op) => esGerencia() && (op === 'insert' || r.estado === 'abierto'),
     tc_movimientos: () => esGerencia(),
+    tc_envios: () => false, // solo la Edge Function enviar-informe-tarjeta
   };
   const DEFECTOS = {
     comunicados: () => ({ cuerpo: '', destino: 'todos', destino_id: null, requiere_confirmacion: true, fijado: false, creado: ahoraISO() }),
@@ -1098,6 +1104,7 @@
   async function invocar(nombre, { body }) {
     await espera();
     if (nombre === 'crear-cliente') return invocarCliente(body || {});
+    if (nombre === 'enviar-informe-tarjeta') return invocarInforme(body || {});
     if (nombre !== 'crear-usuario') return errorFuncion(404, 'Función desconocida.');
     if (!sesion) return errorFuncion(401, 'Falta la sesión.');
     if (!gestionaCuentas()) return errorFuncion(403, 'No tienes permiso para administrar cuentas.');
@@ -1137,6 +1144,24 @@
       return { data: { ok: true }, error: null };
     }
     return errorFuncion(400, 'Acción desconocida.');
+  }
+
+  // Edge Function enviar-informe-tarjeta: en la demostración no sale ningún correo;
+  // se valida igual que en el servidor y se registra el envío.
+  function invocarInforme(b) {
+    if (!sesion) return errorFuncion(401, 'Falta la sesión.');
+    if (!esGerencia()) return errorFuncion(403, 'Solo la gerencia envía el informe de la tarjeta.');
+    const ext = db.tc_extractos.find((x) => x.id === Number(b.extracto_id));
+    if (!ext) return errorFuncion(404, 'Ese extracto no existe.');
+    if (!String(b.asunto || '').trim() || !String(b.html || '')) return errorFuncion(400, 'El informe está vacío.');
+    const ultimo = db.tc_envios.filter((x) => x.extracto_id === ext.id && x.ok).sort((x, y) => (x.enviado_en < y.enviado_en ? 1 : -1))[0];
+    if (ultimo && Date.now() - Date.parse(ultimo.enviado_en) < 60000) return errorFuncion(429, 'Este informe se acaba de enviar. Espera un minuto para reenviarlo.');
+    const movs = db.tc_movimientos.filter((m) => m.extracto_id === ext.id);
+    db.tc_envios.push({ id: db.tc_envios.reduce((n, x) => Math.max(n, x.id), 0) + 1, extracto_id: ext.id, enviado_por: uid(), enviado_en: ahoraISO(), destinatarios: INFORME_PARA.slice(),
+      asunto: String(b.asunto).slice(0, 200), nota: String(b.nota || '').slice(0, 1000), estado_extracto: ext.estado,
+      avance: movs.length ? Math.round((movs.filter((m) => m.estado !== 'pendiente').length / movs.length) * 100) : 0, ok: true, error: null });
+    correosEnviados.push({ para: INFORME_PARA.slice(), asunto: b.asunto, html: b.html, texto: b.texto, adjunto: b.csv_nombre, csv: b.csv });
+    return { data: { ok: true, destinatarios: INFORME_PARA.map((c) => ({ correo: c })) }, error: null };
   }
 
   // Edge Function crear-cliente (extranet)
@@ -1192,5 +1217,6 @@
     cuentas: GENTE.filter((g) => g.etiqueta).map((g) => ({ correo: g.correo, nombre: g.nombre, rol: g.etiqueta })),
     clientes: CLIENTES_DEMO.filter((c) => c.usuario).map((c) => ({ correo: c.correo, nombre: c.contacto, rol: c.tipo === 'Freelance' ? 'Aliado' : 'Cliente' })),
     db, // para pruebas automatizadas
+    correos: correosEnviados, // informes «enviados» (no salen de la página)
   };
 })();

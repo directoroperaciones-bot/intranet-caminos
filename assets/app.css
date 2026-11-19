@@ -1109,3 +1109,25 @@ button.gbar-r:hover, .gbar-r[aria-pressed="true"] { background: var(--hueso); }
 .cc-lista td small { display: block; font-size: 11.5px; }
 .cc-ventas input[type=checkbox] { width: 18px; height: 18px; accent-color: var(--coral); }
 @media (max-width: 760px) { .cc-form .form-grid { grid-template-columns: minmax(0, 1fr); } }
+
+/* Tarjeta: informe de la conciliación por correo */
+.tc-inf-btn { display: inline-flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.tc-inf-btn small { font-size: 12px; }
+.modal-caja.tc-inf { max-width: 760px; }
+.tc-inf-dl { margin: 0; display: grid; gap: 8px; }
+.tc-inf-dl > div { display: grid; grid-template-columns: 72px 1fr; gap: 10px; align-items: baseline; }
+.tc-inf-dl dt { font: 600 11px/1.3 var(--fuente); letter-spacing: .12em; text-transform: uppercase; color: var(--pizarra); }
+.tc-inf-dl dd { margin: 0; font-size: 14px; min-width: 0; overflow-wrap: anywhere; display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.tc-inf-dl dd .i { width: 16px; height: 16px; color: var(--pizarra); }
+.tc-inf-para .chip { white-space: normal; font-weight: 500; flex-direction: column; align-items: flex-start; gap: 1px; border-radius: 10px; padding: 6px 10px; max-width: 100%; }
+.tc-inf-para .chip span { overflow-wrap: anywhere; }
+.tc-inf-aviso { font-size: 13px; padding: 10px 14px; }
+.tc-inf-ultimo { display: flex; align-items: center; gap: 6px; margin: 0; }
+.tc-inf-ultimo .i { width: 15px; height: 15px; }
+.tc-inf-prev { display: flex; flex-direction: column; gap: 6px; }
+.tc-inf-prev iframe { width: 100%; height: 380px; border: 1px solid var(--hairline); border-radius: 12px; background: #F7F3EE; }
+@media (max-width: 520px) {
+  .modal-caja.tc-inf { padding: 20px 16px 16px; }
+  .tc-inf-dl > div { grid-template-columns: 1fr; gap: 2px; }
+  .tc-inf-prev iframe { height: 320px; }
+}

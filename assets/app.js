@@ -106,6 +106,7 @@
     lapiz: '<path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z"/><path d="m15 5 4 4"/>',
     globo: '<circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"/><path d="M2 12h20"/>',
     iglesia: '<path d="M10 9h4"/><path d="M12 7v5"/><path d="M14 22v-4a2 2 0 0 0-4 0v4"/><path d="M18 22V5.618a1 1 0 0 0-.553-.894l-4.553-2.277a2 2 0 0 0-1.788 0L6.553 4.724A1 1 0 0 0 6 5.618V22"/><path d="m18 7 3.447 1.724a1 1 0 0 1 .553.894V20a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V9.618a1 1 0 0 1 .553-.894L6 7"/>',
+    correo: '<rect width="20" height="16" x="2" y="4" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/>',
     tarjeta: '<rect width="20" height="14" x="2" y="5" rx="2"/><line x1="2" x2="22" y1="10" y2="10"/>',
     escudo: '<path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/>',
     monitor: '<rect width="20" height="14" x="2" y="3" rx="2"/><line x1="8" x2="16" y1="21" y2="21"/><line x1="12" x2="12" y1="17" y2="21"/>',
@@ -163,7 +164,7 @@
   // ---------- Estado ----------
   const S = {
     ofi: { ip: null, equipos: [], sede: null, quitar: null, nombre: '' },
-    tc: { tarjetas: [], categorias: [], grupos: [], extractos: [], movs: [], regs: [], cruzados: new Map(), urls: {}, tarjeta: null, extracto: null, pestana: 'banco', filtro: 'todos', q: '', paso: 'gastos', mes: '', gastos: [], gastosCruces: new Map(), filtroG: 'todos', archivoUrl: null,
+    tc: { tarjetas: [], categorias: [], grupos: [], extractos: [], movs: [], regs: [], cruzados: new Map(), urls: {}, informe: null, envios: [], tarjeta: null, extracto: null, pestana: 'banco', filtro: 'todos', q: '', paso: 'gastos', mes: '', gastos: [], gastosCruces: new Map(), filtroG: 'todos', archivoUrl: null,
       abierto: null, borrador: {}, importar: { texto: '', filas: null, mapa: {}, cab: [] }, archivoRegistro: null, confirmar: null, borrar: null, vivo: false, actualizado: null },
     via: null, navUltima: {}, ajuste: null,
     pantalla: 'cargando', error: '', correoLogin: '', claveVoluntaria: false, ocupado: '', recuperacion: false, olvido: { enviado: false, correo: '' },
@@ -427,7 +428,7 @@
     soltarTarjeta();
     soltarGestion();
     S.ges = { filas: [], estado: null, mes: '', f: {}, medida: 'valor', detalle: false, orden: { col: 'fecha', asc: false }, clave: null, vivo: false, cargado: null, cc: { datos: null, abierto: false, cliente: '', desde: '', hasta: '', quitadas: new Set(), confirmar: null } };
-    S.tc = Object.assign(S.tc, { tarjetas: [], extractos: [], movs: [], regs: [], gastos: [], tarjeta: null, extracto: null, abierto: null, borrador: {}, confirmar: null, borrar: null, vivo: false, paso: 'gastos', mes: '', filtroG: 'todos', archivoRegistro: null, archivoUrl: null, urls: {} });
+    S.tc = Object.assign(S.tc, { tarjetas: [], extractos: [], movs: [], regs: [], gastos: [], tarjeta: null, extracto: null, abierto: null, borrador: {}, confirmar: null, borrar: null, vivo: false, paso: 'gastos', mes: '', filtroG: 'todos', archivoRegistro: null, archivoUrl: null, urls: {}, informe: null, envios: [] });
     Object.assign(S, {
       pantalla: 'login', error: '', recuperacion: false, olvido: { enviado: false, correo: '' }, usuario: null, perfil: null, view: 'inicio', menu: false, hoy: null, asistencia: null, lb: null,
       malla: { lunes: '', sede: 'todas', vista: 'semana', filas: [], base: [], rot: [], edit: null, guardando: false },
@@ -617,7 +618,7 @@
       ${activo && activo.tabs.length > 1 ? `<nav class="subtabs" aria-label="${esc(activo.nombre)}"><div class="wrap subtabs-in">${activo.tabs.map((t) => `<button type="button" data-view="${t.id}"${S.view === t.id ? ' aria-current="page"' : ''}>${t.nombre}${badgeTxt(nTab(t))}</button>`).join('')}</div></nav>` : ''}</header>
       <main class="wrap page" id="contenido">${S.cargandoVista ? cargandoBloque() : S.errorVista ? errorVistaView() : vistaActual()}</main>
       <footer class="foot-site"><div class="wrap"><span><b>${esc(MARCA.nombre)}</b> — ${esc(MARCA.lema)}</span><span>${pie}</span></div></footer>
-      ${S.lb ? lightboxView() : ''}${S.ajuste ? ajusteView() : ''}`;
+      ${S.lb ? lightboxView() : ''}${S.ajuste ? ajusteView() : ''}${S.view === 'tarjeta' && S.tc.informe && tcExtracto() ? informeTcView() : ''}`;
   }
 
   function menuPop() {
@@ -3160,7 +3161,7 @@
 
   async function cargarDatosExtracto() {
     const T = S.tc, e = tcExtracto();
-    if (!e) { T.movs = []; T.regs = []; T.cruzados = new Set(); return; }
+    if (!e) { T.movs = []; T.regs = []; T.cruzados = new Set(); T.envios = []; return; }
     const ids = T.extractos.map((x) => x.id);
     const [movs, regs, cruces] = await Promise.all([
       todas(() => sb.from('tc_movimientos').select('*').eq('extracto_id', e.id).order('fecha').order('id')),
@@ -3174,6 +3175,7 @@
     const conSoporte = movs.concat(T.regs).filter((x) => x.soporte_ruta).map((x) => ({ ruta: x.soporte_ruta }));
     await firmar('conciliacion', conSoporte);
     conSoporte.forEach((f) => { T.urls[f.ruta] = f.url; });
+    await cargarEnviosTc();
     T.actualizado = new Date();
   }
 
@@ -3311,7 +3313,7 @@
       </div>`;
 
     const acc = cerrado
-      ? `<div class="tc-acc"><button type="button" class="btn ghost sm" data-accion="tcExportar">${ico('descargar')}Exportar a Excel</button>
+      ? `<div class="tc-acc"><button type="button" class="btn ghost sm" data-accion="tcExportar">${ico('descargar')}Exportar a Excel</button>${botonInformeTc()}
           ${T.confirmar === 'reabrir' ? `<span class="confirmar">¿Reabrir? Se podrá editar de nuevo.<span><button type="button" class="btn sm" data-accion="tcReabrirSi"${ocupado('tc')}>Sí, reabrir</button><button type="button" class="btn txt sm" data-accion="tcNo">No</button></span></span>`
             : '<button type="button" class="btn txt sm" data-accion="tcReabrir">Reabrir conciliación</button>'}</div>`
       : `<div class="tc-acc">
@@ -3319,6 +3321,7 @@
           <button type="button" class="btn ghost sm" data-accion="tcAbrir" data-panel="mov"${T.abierto === 'mov' ? ' disabled' : ''}>${ico('mas')}Agregar movimiento</button>
           <button type="button" class="btn ghost sm" data-accion="tcSugeridos"${nSug ? '' : ' disabled'}${ocupado('tc')}>${ico('check')}Conciliar sugeridos${nSug ? ` (${nSug})` : ''}</button>
           <button type="button" class="btn txt sm" data-accion="tcExportar">${ico('descargar')}Exportar a Excel</button>
+          ${botonInformeTc()}
           ${T.confirmar === 'cerrar' ? `<span class="confirmar">${c.diferencia != null && Math.abs(c.diferencia) >= 1 ? `El saldo no cuadra por ${plata(c.diferencia)}. ¿Cerrar igual?` : '¿Cerrar? Ya no se podrá editar.'}<span><button type="button" class="btn sm" data-accion="tcCerrarSi"${ocupado('tc')}>Sí, cerrar</button><button type="button" class="btn txt sm" data-accion="tcNo">No</button></span></span>`
             : `<button type="button" class="btn ghost sm tc-cerrar" data-accion="tcCerrar"${c.pend ? ` disabled title="Quedan ${plural(c.pend, 'movimiento', 'movimientos')} por conciliar"` : ''}>${ico('check')}Cerrar conciliación</button>`}
         </div>`;
@@ -3330,6 +3333,11 @@
     const cuerpo = T.pestana === 'agencia' ? agenciaTc() : T.pestana === 'resumen' ? resumenTc() : bancoTc(sug);
 
     return cabeza + panelArriba + resumen + kpis + acc + panel + pest + cuerpo;
+  }
+
+  function botonInformeTc() {
+    const u = ultimoEnvioTc();
+    return `<span class="tc-inf-btn"><button type="button" class="btn ghost sm" data-accion="tcInforme"${ocupado('tcInforme')}>${ico('correo')}Enviar informe por correo</button>${u ? `<small class="hint" title="${esc(u.destinatarios.join(', '))}">Enviado el ${esc(envioTexto(u))}</small>` : ''}</span>`;
   }
 
   function pasosTc() {
@@ -3537,20 +3545,10 @@
   }
 
   function resumenTc() {
-    const T = S.tc;
-    const gastos = T.movs.filter((m) => Number(m.valor) > 0 && m.estado !== 'no_reconocido' && m.estado !== 'personal');
-    const porCat = new Map();
-    gastos.forEach((m) => {
-      const n = (tcCategoria(m.categoria_id) || {}).nombre || (TC_FINANCIEROS.includes(m.tipo) ? 'Gastos bancarios' : 'Sin categoría');
-      porCat.set(n, (porCat.get(n) || 0) + Number(m.valor));
-    });
-    const filas = [...porCat.entries()].sort((a, b) => b[1] - a[1]);
-    const max = Math.max(1, ...filas.map((f) => f[1])), total = filas.reduce((t, f) => t + f[1], 0);
+    const { cats: filas, grupos, total } = gastosPorTc();
+    const max = Math.max(1, ...filas.map((f) => f[1]));
     const barras = (lista, maxV, totalV) => lista.map(([n, v]) => `<li class="tc-bar" title="${esc(n)}: ${plata(v)} (${Math.round((v / totalV) * 100)} %)">
         <span class="tc-bar-n">${esc(n)}</span><span class="tc-bar-t"><span style="width:${Math.max(2, (v / maxV) * 100)}%"></span></span><span class="tc-bar-v">${plata(v)}<small>${Math.round((v / totalV) * 100)} %</small></span></li>`).join('');
-    const porGrupo = new Map();
-    gastos.filter((m) => m.grupo_id).forEach((m) => { const n = (tcGrupo(m.grupo_id) || {}).nombre || 'Grupo'; porGrupo.set(n, (porGrupo.get(n) || 0) + Number(m.valor)); });
-    const grupos = [...porGrupo.entries()].sort((a, b) => b[1] - a[1]);
     const c = calcularTc();
     return `<section class="tc-sec tc-resumen">
         <div class="card"><h2>Gasto por categoría</h2><p class="hint">Compras y cargos del banco del periodo, sin los no reconocidos ni los personales. Total ${plata(total)}.</p>
@@ -3904,6 +3902,56 @@
   }
   function exportarTc() {
     if (CFG.sinDescargas) { toast('En esta vista previa no se descargan archivos. En la intranet publicada, este botón baja el CSV para Excel.', 'warn'); return; }
+    const { texto, nombre } = csvTc();
+    const blob = new Blob([texto], { type: 'text/csv;charset=utf-8' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = nombre;
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
+    toast('Archivo descargado. Ábrelo con Excel.');
+  }
+
+  // ---------- Tarjeta: informe de la conciliación por correo ----------
+  // Los destinatarios reales están fijos en la Edge Function «enviar-informe-tarjeta»;
+  // esta lista solo se muestra para que quien envía sepa a quién le llega.
+  const TC_INFORME_PARA = [
+    { nombre: 'Yenny Huerfano', cargo: 'Financiero', correo: 'financiero@agenciacaminos.com.co' },
+    { nombre: 'Jhon Guataquira', cargo: 'Dirección', correo: 'director@agenciacaminos.com.co' },
+  ];
+  const paraTexto = () => TC_INFORME_PARA.map((d) => primerNombre(d.nombre)).join(' y ');
+
+  // Gasto del periodo (sin no reconocidos ni personales) por categoría y por grupo
+  function gastosPorTc() {
+    const gastos = S.tc.movs.filter((m) => Number(m.valor) > 0 && m.estado !== 'no_reconocido' && m.estado !== 'personal');
+    const porCat = new Map(), porGrupo = new Map();
+    gastos.forEach((m) => {
+      const n = (tcCategoria(m.categoria_id) || {}).nombre || (TC_FINANCIEROS.includes(m.tipo) ? 'Gastos bancarios' : 'Sin categoría');
+      porCat.set(n, (porCat.get(n) || 0) + Number(m.valor));
+      if (m.grupo_id) { const g = (tcGrupo(m.grupo_id) || {}).nombre || 'Grupo'; porGrupo.set(g, (porGrupo.get(g) || 0) + Number(m.valor)); }
+    });
+    const orden = (mapa) => [...mapa.entries()].sort((a, b) => b[1] - a[1]);
+    const cats = orden(porCat), grupos = orden(porGrupo);
+    return { cats, grupos, total: cats.reduce((t, f) => t + f[1], 0) };
+  }
+
+  async function cargarEnviosTc() {
+    const e = tcExtracto();
+    S.tc.envios = [];
+    if (!e) return;
+    // Si la migración 024 aún no está en el servidor, la pestaña sigue funcionando sin el historial
+    const { data, error } = await sb.from('tc_envios').select('*').eq('extracto_id', e.id).order('enviado_en', { ascending: false }).limit(5);
+    if (!error) S.tc.envios = data || [];
+  }
+  const ultimoEnvioTc = () => (S.tc.envios || []).find((x) => x.ok !== false) || null;
+  function envioTexto(x) {
+    const d = new Date(x.enviado_en);
+    return `${fechaCorta(fechaEn(miTz(), d))} · ${hhmm(horaEn(miTz(), d))}${x.enviado_por ? ` por ${primerNombre(nombreDe(x.enviado_por))}` : ''}`;
+  }
+
+  // CSV para Excel (BOM, «;» y \r\n): el mismo del botón «Exportar a Excel» y del adjunto del correo
+  function csvTc() {
     const e = tcExtracto(), t = tcTarjeta(), c = calcularTc();
     const celda = (v) => { let s = String(v == null ? '' : v); if (typeof v === 'string' && /^[=+\-@]/.test(s)) s = "'" + s; return /[;"\r\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; };
     const num = (v) => (Math.round(Number(v) * 100) / 100).toFixed(2).replace('.', ',');
@@ -3916,14 +3964,163 @@
     ].concat(S.tc.movs.map((m) => [m.fecha, m.descripcion, TC_TIPOS[m.tipo], num(m.valor), m.moneda, m.valor_origen == null ? '' : num(m.valor_origen), m.cuotas || '', m.autorizacion || '',
       (tcCategoria(m.categoria_id) || {}).nombre || '', (tcGrupo(m.grupo_id) || {}).nombre || '', TC_ESTADOS[m.estado].nombre, tcTieneSoporte(m) ? 'Sí' : 'No',
       m.registro_id ? (tcRegistro(m.registro_id) || {}).descripcion || '' : '', m.nota || '', m.conciliado_por ? nombreDe(m.conciliado_por) : ''].map(celda).join(';')));
-    const blob = new Blob(['﻿' + lineas.join('\r\n') + '\r\n'], { type: 'text/csv;charset=utf-8' });
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = `conciliacion-${nombreArchivo(t.nombre)}-${t.ultimos4}-${e.hasta}.csv`;
-    document.body.appendChild(a);
-    a.click();
-    setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
-    toast('Archivo descargado. Ábrelo con Excel.');
+    return { texto: '﻿' + lineas.join('\r\n') + '\r\n', nombre: `conciliacion-${nombreArchivo(t.nombre)}-${t.ultimos4}-${e.hasta}.csv` };
+  }
+
+  // Correo en HTML con estilos en línea (Gmail y Outlook ignoran las hojas de estilo)
+  function informeTc(nota) {
+    const e = tcExtracto(), t = tcTarjeta(), c = calcularTc(), g = gastosPorTc(), cerrado = e.estado === 'cerrado';
+    const yoN = P().nombre || 'La gerencia';
+    const estadoTxt = cerrado
+      ? `Cerrada${e.cerrado_por ? ` por ${nombreDe(e.cerrado_por)}` : ''}${e.cerrado_en ? ` el ${fechaCorta(fechaEn(miTz(), new Date(e.cerrado_en)))}` : ''}`
+      : `Abierta · ${c.avance} % conciliado (${c.resueltos} de ${plural(c.total, 'movimiento', 'movimientos')})`;
+    const cuadraTxt = c.diferencia == null ? 'Falta el total del extracto' : Math.abs(c.diferencia) < 1 ? 'Cuadra' : `Diferencia de ${plata(c.diferencia)}`;
+    const asunto = `Conciliación tarjeta ${t.nombre} ···${t.ultimos4} · ${periodoTexto(e)} · ${cerrado ? 'cerrada' : `${c.avance} % conciliada`}`;
+    const F = "font-family:Poppins,Arial,Helvetica,sans-serif;";
+    const td = (v, extra) => `<td style="${F}padding:8px 10px;border-bottom:1px solid #EEE7DF;font-size:13px;color:#1F2024;${extra || ''}">${v}</td>`;
+    const th = (v, extra) => `<th align="left" style="${F}padding:8px 10px;border-bottom:2px solid #E4DBD1;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:#6B6E76;font-weight:600;${extra || ''}">${v}</th>`;
+    const h2 = (v) => `<h2 style="${F}font-size:16px;margin:26px 0 8px;color:#1F2024;">${v}</h2>`;
+    const tabla = (filas) => `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;">${filas}</table>`;
+    const dato = (l, v, color) => `<tr>${td(esc(l), 'color:#6B6E76;')}${td(`<b style="color:${color || '#1F2024'};">${v}</b>`, 'text-align:right;white-space:nowrap;')}</tr>`;
+    const pct = (v, tot) => (tot ? Math.round((v / tot) * 100) : 0);
+
+    const resumen = tabla([
+      dato('Total a pagar', e.saldo_nuevo == null ? '—' : esc(plata(e.saldo_nuevo))),
+      dato('Pago mínimo', e.pago_minimo == null ? '—' : esc(plata(e.pago_minimo))),
+      dato('Fecha límite de pago', e.fecha_pago ? esc(fechaCorta(e.fecha_pago) + ' ' + e.fecha_pago.slice(0, 4)) : '—', !cerrado && c.diasPago != null && c.diasPago <= 5 ? '#C0392B' : null),
+      dato('Saldo anterior', esc(plata(e.saldo_anterior))),
+      dato('Cargos del periodo', esc(plata(c.cargos))),
+      dato('Pagos y abonos', esc(plata(c.abonos))),
+      dato('Saldo calculado', esc(plata(c.calculado))),
+      dato('Cuadre con el extracto', esc(cuadraTxt), c.diferencia != null && Math.abs(c.diferencia) < 1 ? '#1E7F4F' : '#C0392B'),
+    ].join(''));
+
+    const alertas = [
+      c.pend ? ['Por conciliar', `${plural(c.pend, 'movimiento', 'movimientos')} · ${plata(c.valorPend)}`] : null,
+      c.sinSop ? ['Compras sin soporte (factura)', `${plural(c.sinSop, 'compra', 'compras')} · ${plata(c.valorSinSop)}`] : null,
+      c.noRec ? ['No reconocidos (reclamo al banco)', `${plural(c.noRec, 'cargo', 'cargos')} · ${plata(c.valorNoRec)}`] : null,
+      c.pers ? ['Gastos personales (cobrar a la persona)', `${plural(c.pers, 'cargo', 'cargos')} · ${plata(c.valorPers)}`] : null,
+      c.financieros ? ['Intereses, cuota de manejo y comisiones', plata(c.financieros)] : null,
+    ].filter(Boolean);
+    const bloqueAlertas = alertas.length
+      ? tabla(alertas.map(([l, v]) => dato(l, esc(v), '#B5532A')).join(''))
+      : `<p style="${F}font-size:13px;color:#1E7F4F;margin:0;">Sin pendientes, sin cargos en disputa y todas las compras con factura.</p>`;
+
+    const tablaReparto = (filas, total) => filas.length
+      ? tabla(`<tr>${th('Concepto')}${th('Valor', 'text-align:right;')}${th('%', 'text-align:right;')}</tr>` + filas.map(([n, v]) => `<tr>${td(esc(n))}${td(esc(plata(v)), 'text-align:right;white-space:nowrap;')}${td(pct(v, total) + ' %', 'text-align:right;color:#6B6E76;')}</tr>`).join('')
+        + `<tr>${td('<b>Total</b>')}${td(`<b>${esc(plata(total))}</b>`, 'text-align:right;white-space:nowrap;')}${td('')}</tr>`)
+      : `<p style="${F}font-size:13px;color:#6B6E76;margin:0;">Sin datos.</p>`;
+
+    // Movimientos que piden atención (el detalle completo va en el adjunto)
+    const motivo = (m) => m.estado === 'pendiente' ? 'Por conciliar' : m.estado === 'no_reconocido' ? 'No reconocido' : m.estado === 'personal' ? 'Personal' : 'Sin soporte';
+    const atencion = S.tc.movs.filter((m) => m.estado === 'pendiente' || m.estado === 'no_reconocido' || m.estado === 'personal' || (tcNecesitaSoporte(m) && !tcTieneSoporte(m)));
+    const MAX = 40;
+    const bloqueAtencion = atencion.length
+      ? tabla(`<tr>${th('Fecha')}${th('Descripción')}${th('Valor', 'text-align:right;')}${th('Revisar')}</tr>` + atencion.slice(0, MAX).map((m) => `<tr>${td(esc(fechaCorta(m.fecha)), 'white-space:nowrap;')}${td(esc(m.descripcion) + (m.nota ? `<br><span style="color:#6B6E76;font-size:12px;">${esc(m.nota)}</span>` : ''))}${td(esc(plata(m.valor)), 'text-align:right;white-space:nowrap;')}${td(esc(motivo(m)), 'white-space:nowrap;color:#B5532A;')}</tr>`).join(''))
+        + (atencion.length > MAX ? `<p style="${F}font-size:12px;color:#6B6E76;">Y ${atencion.length - MAX} más en el archivo adjunto.</p>` : '')
+      : `<p style="${F}font-size:13px;color:#1E7F4F;margin:0;">Ningún movimiento pendiente de revisión.</p>`;
+
+    const notaHtml = String(nota || '').trim()
+      ? `<div style="${F}margin:18px 0 0;padding:12px 14px;background:#FFF1EF;border-left:3px solid #F25061;border-radius:6px;font-size:13px;color:#1F2024;"><b>Nota de ${esc(primerNombre(yoN))}:</b><br>${esc(String(nota).trim()).replace(/\n/g, '<br>')}</div>` : '';
+
+    const html = `<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(asunto)}</title></head>
+<body style="margin:0;padding:0;background:#F7F3EE;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#F7F3EE;"><tr><td align="center" style="padding:24px 12px;">
+<table role="presentation" width="640" cellpadding="0" cellspacing="0" style="max-width:640px;width:100%;background:#FFFFFF;border-radius:14px;overflow:hidden;">
+<tr><td style="background:#D63B4D;padding:22px 26px;">
+  <div style="${F}font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:#FFFFFF;opacity:.9;">Caminos · Intranet</div>
+  <div style="${F}font-size:22px;font-weight:600;color:#FFFFFF;margin-top:4px;">Conciliación de la tarjeta de crédito</div>
+  <div style="${F}font-size:14px;color:#FFFFFF;margin-top:6px;">${esc(t.nombre)} ···${esc(t.ultimos4)}${t.banco ? ' · ' + esc(t.banco) : ''} · Periodo ${esc(periodoTexto(e))}</div>
+</td></tr>
+<tr><td style="padding:22px 26px 28px;">
+  <p style="${F}font-size:14px;color:#1F2024;margin:0;">Hola, ${esc(paraTexto())}: este es el informe de la conciliación de la tarjeta.</p>
+  <p style="${F}font-size:13px;margin:10px 0 0;"><span style="display:inline-block;padding:4px 10px;border-radius:999px;background:${cerrado ? '#E3F2E9' : '#FFF4DC'};color:${cerrado ? '#1E7F4F' : '#8A5A00'};font-weight:600;">${esc(estadoTxt)}</span></p>
+  ${notaHtml}
+  ${h2('Resumen del extracto')}${resumen}
+  ${h2('Para revisar')}${bloqueAlertas}
+  ${h2('Gasto por categoría')}${tablaReparto(g.cats, g.total)}
+  ${g.grupos.length ? h2('Gasto por grupo de viaje') + tablaReparto(g.grupos, g.grupos.reduce((s, x) => s + x[1], 0)) : ''}
+  ${h2('Movimientos que piden atención')}${bloqueAtencion}
+  <p style="${F}font-size:12px;color:#6B6E76;margin:26px 0 0;line-height:1.5;">El detalle completo (${plural(c.total, 'movimiento', 'movimientos')}) va en el archivo adjunto, listo para abrir con Excel.<br>Enviado desde la Intranet Caminos por ${esc(yoN)} el ${esc(fechaCorta(fechaEn(miTz())))} a las ${esc(hhmm(horaEn(miTz())))}.</p>
+</td></tr></table>
+<p style="${F}font-size:11px;color:#9A9CA3;margin:14px 0 0;">${esc(MARCA.nombre)} · ${esc(MARCA.direccion)} · ${esc(MARCA.web)}</p>
+</td></tr></table></body></html>`;
+
+    const texto = [
+      `Conciliación de la tarjeta ${t.nombre} ···${t.ultimos4} · Periodo ${periodoTexto(e)}`,
+      estadoTxt,
+      String(nota || '').trim() ? `\nNota de ${primerNombre(yoN)}: ${String(nota).trim()}` : '',
+      '',
+      `Total a pagar: ${e.saldo_nuevo == null ? '—' : plata(e.saldo_nuevo)}`,
+      `Fecha límite de pago: ${e.fecha_pago || '—'}`,
+      `Cuadre con el extracto: ${cuadraTxt}`,
+      ...alertas.map(([l, v]) => `${l}: ${v}`),
+      '',
+      'Gasto por categoría:',
+      ...g.cats.map(([n, v]) => `  ${n}: ${plata(v)} (${pct(v, g.total)} %)`),
+      '',
+      `El detalle completo va en el archivo adjunto. Enviado desde la Intranet Caminos por ${yoN}.`,
+    ].join('\n').replace(/ /g, ' ');
+    return { asunto, html, texto };
+  }
+
+  function abrirInformeTc() {
+    S.tc.informe = { nota: '' };
+    render();
+    const n = document.querySelector('.modal textarea');
+    if (n) n.focus();
+  }
+  let tcInfEspera = null;
+  function refrescarVistaInforme() {
+    clearTimeout(tcInfEspera);
+    tcInfEspera = setTimeout(() => {
+      const f = document.querySelector('.tc-inf-prev iframe');
+      if (f && S.tc.informe) f.srcdoc = informeTc(S.tc.informe.nota).html;
+    }, 300);
+  }
+
+  function informeTcView() {
+    const I = S.tc.informe, c = calcularTc(), cerrado = tcCerrado(), inf = informeTc(I.nota), u = ultimoEnvioTc(), enviando = S.ocupado === 'tcInforme';
+    return `<div class="modal" role="dialog" aria-modal="true" aria-labelledby="tcinf-t">
+        <form class="modal-caja tc-inf" data-form="tcInforme">
+          <span class="eyebrow">Informe por correo</span>
+          <h2 id="tcinf-t">Enviar el informe de la conciliación</h2>
+          <dl class="tc-inf-dl">
+            <div><dt>Para</dt><dd class="tc-inf-para">${TC_INFORME_PARA.map((d) => `<span class="chip mute"><b>${esc(d.nombre)}</b><span>${esc(d.correo)}</span></span>`).join('')}</dd></div>
+            <div><dt>Asunto</dt><dd>${esc(inf.asunto)}</dd></div>
+            <div><dt>Adjunto</dt><dd>${ico('hoja')}${esc(csvTc().nombre)} <small class="hint">(detalle para Excel)</small></dd></div>
+          </dl>
+          ${cerrado ? '' : `<p class="notice warn tc-inf-aviso">${ico('alerta')}<span>La conciliación sigue abierta (${c.avance} %). El informe sale con el avance de este momento${c.pend ? ` y ${plural(c.pend, 'movimiento', 'movimientos')} por conciliar` : ''}.</span></p>`}
+          ${u ? `<p class="hint tc-inf-ultimo">${ico('reloj')}Ya se envió el ${esc(envioTexto(u))}.</p>` : ''}
+          <label class="field"><span>Nota para ellos (opcional)</span><textarea rows="2" maxlength="1000" data-tcinf="nota" placeholder="Ej.: el pago se hace el jueves; hay un cargo en reclamo con el banco">${esc(I.nota)}</textarea></label>
+          <div class="tc-inf-prev"><span class="eyebrow">Vista previa del correo</span><iframe title="Vista previa del correo" sandbox="" srcdoc="${esc(inf.html)}"></iframe></div>
+          <div class="modal-acc">
+            <button type="button" class="btn ghost" data-accion="tcInformeCerrar"${enviando ? ' disabled' : ''}>Cancelar</button>
+            <button type="submit" class="btn"${ocupado('tcInforme')}>${ico('correo')}${enviando ? 'Enviando…' : 'Enviar informe'}</button>
+          </div>
+        </form>
+      </div>`;
+  }
+
+  async function enviarInformeTc() {
+    const I = S.tc.informe;
+    if (!I || !tcExtracto()) return;
+    const inf = informeTc(I.nota), csv = csvTc();
+    await accion('tcInforme', async () => {
+      const { data, error } = await sb.functions.invoke('enviar-informe-tarjeta', {
+        body: { extracto_id: S.tc.extracto, asunto: inf.asunto, html: inf.html, texto: inf.texto, csv: csv.texto, csv_nombre: csv.nombre, nota: String(I.nota || '').trim() },
+      });
+      if (error) {
+        let msg = error.message;
+        try { const j = await error.context.json(); if (j && j.error) msg = j.error; } catch (e) { /* sin cuerpo */ }
+        if (/not found|404|failed to send a request/i.test(msg)) msg = 'El envío de correos aún no está instalado en el servidor (Edge Function «enviar-informe-tarjeta»).';
+        throw new Error(msg);
+      }
+      if (data && data.error) throw new Error(data.error);
+      S.tc.informe = null;
+      await cargarEnviosTc();
+      toast(`Informe enviado a ${paraTexto()}.`);
+    });
   }
 
   // ---------- Oficina: desde dónde se puede marcar (gerencia) ----------
@@ -4636,6 +4833,8 @@
         case 'tcSugeridos': await sugeridosTc(); return;
         case 'tcEstado': await estadoTc(Number(d.id), d.estado); return;
         case 'tcExportar': exportarTc(); return;
+        case 'tcInforme': abrirInformeTc(); return;
+        case 'tcInformeCerrar': if (S.ocupado !== 'tcInforme') { S.tc.informe = null; render(); } return;
         case 'tcCerrar': S.tc.confirmar = 'cerrar'; render(); return;
         case 'tcReabrir': S.tc.confirmar = 'reabrir'; render(); return;
         case 'tcCerrarSi':
@@ -5081,6 +5280,7 @@
     }
     if (tipo === 'olvido') { await pedirEnlace(f.correo.value.trim().toLowerCase()); return; }
     if (tipo === 'viatico') { await guardarViatico(); return; }
+    if (tipo === 'tcInforme') { await enviarInformeTc(); return; }
     if (tipo === 'viagasto') { await guardarGastoVia(); return; }
     if (tipo === 'ajuste') {
       const A = S.ajuste;
@@ -5151,6 +5351,7 @@
       if (dv.viar) { S.via.rev[dv.viar] = el.value; return; }
       if (dv.vianomot) { S.via.noMotivo = el.value; return; }
     }
+    if (el.dataset && el.dataset.tcinf && S.tc.informe) { S.tc.informe[el.dataset.tcinf] = el.value; refrescarVistaInforme(); return; }
     if (el.dataset && el.dataset.aj && S.ajuste) {
       S.ajuste[el.dataset.aj] = el.value;
       if (el.dataset.aj === 'salida') { S.ajuste.opcion = 'otra'; const r = document.querySelector('input[name=opcion][value=otra]'); if (r) r.checked = true; }
@@ -5398,6 +5599,7 @@
       if (fichaG.id) { cerrarFichaGrupo(true); return; }
       if (S.lb) { S.lb = null; render(); return; }
       if (S.ajuste && S.ocupado !== 'ajuste') { S.ajuste = null; render(); return; }
+      if (S.tc.informe && S.ocupado !== 'tcInforme') { S.tc.informe = null; render(); return; }
       if (S.menu) { S.menu = false; render(); const a = document.querySelector('.avatar'); if (a) a.focus(); return; }
       if (S.malla.edit) { S.malla.edit = null; render(); return; }
     }
