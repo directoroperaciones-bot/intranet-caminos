@@ -184,7 +184,7 @@
   // ---------- Permisos de interfaz (solo muestran u ocultan) ----------
   const P = () => S.perfil || {};
   const esAdmin = () => !!P().es_admin;
-  const esGerencia = () => P().rol === 'gerente' || esAdmin();
+  const esGerencia = () => P().rol === 'gerente'; // solo el cargo de gerente ve todo
   const esLider = () => esGerencia() || P().rol === 'directora';
   const lideraSede = (s) => esGerencia() || (P().rol === 'directora' && P().sede_id === s);
   const esSupervisor = () => P().rol === 'supervisor';

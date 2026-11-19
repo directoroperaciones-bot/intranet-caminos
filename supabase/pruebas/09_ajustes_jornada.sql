@@ -64,3 +64,16 @@ select prueba.como('Colab Otra Sede');
 select prueba.falla($$select ajustar_jornada('Otro motivo', '14:00', prueba.id('Directora Otra Sede'))$$, 'con la salida marcada ya no se cambia');
 select prueba.como('Directora Otra Sede');
 select prueba.ok(prueba.filas($$delete from ajustes_jornada$$) = 1, 'la líder de la sede puede quitar un ajuste que no autorizó nadie');
+
+\echo '--- Solo el cargo de gerente ve todo (022)'
+reset role;
+update perfiles set es_admin = true where nombre = 'Directora Bogotá';
+select prueba.como('Directora Bogotá');
+select prueba.ok(es_admin() and not es_gerencia(), 'una directora con administración NO es gerencia');
+select prueba.ok(not lidera_sede(sede_de(prueba.id('Colab Otra Sede'))), 'ni lidera otras sedes');
+select prueba.ok(prueba.cuenta($$select 1 from tc_tarjetas$$) = 0 and prueba.cuenta($$select 1 from ventas_informe$$) = 0 and prueba.cuenta($$select 1 from equipos where sede_id <> (select sede_id from perfiles where id = auth.uid())$$) = 0, 'no ve tarjeta, gestión ni equipos de otras sedes');
+select prueba.falla($$select pedir_actualizacion_ventas()$$, 'no puede pedir la actualización de gestión');
+select prueba.como('Gerencia Admin');
+select prueba.ok(es_gerencia(), 'el gerente sí es gerencia');
+reset role;
+update perfiles set es_admin = false where nombre = 'Directora Bogotá';

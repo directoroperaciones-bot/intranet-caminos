@@ -433,7 +433,7 @@
   const perfil = (id) => db.perfiles.find((p) => p.id === id) || {};
   const esAdmin = () => !!(yo() && yo().es_admin);
   const miCliente = () => { const c = db.cuentas_cliente.find((x) => x.usuario_id === uid() && x.activo); return c ? c.cliente_id : null; };
-  const esGerencia = () => !!(yo() && (yo().rol === 'gerente' || yo().es_admin));
+  const esGerencia = () => !!(yo() && yo().rol === 'gerente');
   const esSupervisor = () => !!(yo() && yo().rol === 'supervisor');
   const lideraSede = (s) => !!(yo() && (esGerencia() || (yo().rol === 'directora' && yo().sede_id === s)));
   const puedePublicar = () => !!(yo() && (esGerencia() || yo().rol === 'directora'));
