@@ -165,6 +165,7 @@
     ofi: { ip: null, equipos: [], sede: null, quitar: null, nombre: '' },
     tc: { tarjetas: [], categorias: [], grupos: [], extractos: [], movs: [], regs: [], cruzados: new Map(), urls: {}, tarjeta: null, extracto: null, pestana: 'banco', filtro: 'todos', q: '', paso: 'gastos', mes: '', gastos: [], gastosCruces: new Map(), filtroG: 'todos', archivoUrl: null,
       abierto: null, borrador: {}, importar: { texto: '', filas: null, mapa: {}, cab: [] }, archivoRegistro: null, confirmar: null, borrar: null, vivo: false, actualizado: null },
+    via: null, navUltima: {}, ajuste: null,
     pantalla: 'cargando', error: '', correoLogin: '', claveVoluntaria: false, ocupado: '', recuperacion: false, olvido: { enviado: false, correo: '' },
     usuario: null, perfil: null, sedes: [], areas: [], turnos: [], herramientas: [], personas: [], config: {}, revisores: [],
     view: 'inicio', menu: false, cargandoVista: false, errorVista: '',
@@ -390,6 +391,7 @@
   }
 
   async function entrarApp() {
+    if (!S.via) S.via = viaEstado();
     const [sedes, areas, turnos, herramientas, config, personas, revisores] = await Promise.all([
       q(sb.from('sedes').select('*').order('id')),
       q(sb.from('areas').select('*').order('nombre')),
@@ -409,6 +411,7 @@
     try {
       if (S.view !== 'comunicados' && S.view !== 'inicio') await cargarComunicados();
       if (verSolicitudes() && S.view !== 'solicitudes') await cargarSolicitudes();
+      if (S.view !== 'viaticos') await cargarViaticos().catch(() => {});
       render();
     } catch (e) { /* las insignias no son críticas */ }
   }
@@ -432,6 +435,7 @@
       sol: { lista: [], adj: [], tipo: 'vacaciones', borrador: {}, archivos: [], cancelar: null, coment: {} },
       equipo: { claveNueva: null, filtro: '', confirmar: null, borrador: {} },
       inf: { rango: '', desde: '', hasta: '', sede: 'todas', area: 'todas', orden: { col: 'minTarde', asc: false }, sel: null, datos: null },
+      via: viaEstado(), navUltima: {}, ajuste: null,
     });
     try { history.replaceState(null, '', location.pathname + location.search); } catch (e) { /* nada */ }
     render();
@@ -574,24 +578,43 @@
     { id: 'equipo', nombre: 'Equipo', ver: () => gestionaCuentas() },
     { id: 'tarjeta', nombre: 'Tarjeta', ver: () => esGerencia() },
     { id: 'oficina', nombre: 'Oficina', ver: () => esGerencia() },
+    { id: 'viaticos', nombre: 'Viáticos', ver: () => true, badge: () => viaticosPendientes() },
   ];
+  // Menú agrupado: arriba los grupos; las pestañas del grupo activo van en una barra debajo
+  const GRUPOS_NAV = [
+    { id: 'inicio', nombre: 'Inicio', vistas: ['inicio'] },
+    { id: 'comunicados', nombre: 'Comunicados', vistas: ['comunicados'] },
+    { id: 'viajes', nombre: 'Viajes', vistas: ['grupos', 'viaticos'] },
+    { id: 'personal', nombre: 'Personal', vistas: ['malla', 'asistencia', 'informes', 'solicitudes'] },
+    { id: 'admin', nombre: 'Administración', vistas: ['gestion', 'tarjeta', 'oficina', 'equipo'] },
+  ];
+  function gruposNav() {
+    return GRUPOS_NAV.map((g) => ({ ...g, tabs: g.vistas.map((v) => TABS.find((t) => t.id === v)).filter((t) => t && t.ver()) })).filter((g) => g.tabs.length);
+  }
+  const badgeTxt = (n) => (n ? `<span class="badge" aria-label="${n} pendientes">${n}</span>` : '');
   const puedeVer = (v) => v === 'guia' || TABS.some((t) => t.id === v && t.ver());
 
   function appView() {
-    const tabs = TABS.filter((t) => t.ver());
+    const grupos = gruposNav();
+    const activo = grupos.find((g) => g.tabs.some((t) => t.id === S.view));
+    const nTab = (t) => (t.badge ? t.badge() : 0);
     const pie = [MARCA.direccion, MARCA.web, MARCA.registro].filter(Boolean).map(esc).join(' · ');
     return `<header class="top"><div class="wrap top-in">
         <a class="brand" href="#inicio" data-view="inicio"><img src="${MARCA.logo}" alt="${esc(MARCA.nombre)}"><span>Intranet</span></a>
         ${CFG.demo ? '<span class="demo-tag" title="Datos de ejemplo: nada se guarda al recargar">Demostración</span>' : ''}
-        <nav class="tabs" aria-label="Secciones">${tabs.map((t) => {
-          const n = t.badge ? t.badge() : 0;
-          return `<button type="button" data-view="${t.id}"${S.view === t.id ? ' aria-current="page"' : ''}>${t.nombre}${n ? `<span class="badge" aria-label="${n} pendientes">${n}</span>` : ''}</button>`;
+        <nav class="tabs" aria-label="Secciones">${grupos.map((g) => {
+          const unico = g.tabs.length === 1;
+          const ultima = S.navUltima[g.id];
+          const destino = unico ? g.tabs[0].id : g.tabs.some((t) => t.id === ultima) ? ultima : g.tabs[0].id;
+          const n = g.tabs.reduce((a, t) => a + nTab(t), 0);
+          return `<button type="button" data-view="${destino}" data-vistas="${g.tabs.map((t) => t.id).join(' ')}"${activo === g ? ' aria-current="page"' : ''}>${unico ? g.tabs[0].nombre : g.nombre}${badgeTxt(n)}</button>`;
         }).join('')}</nav>
         <div class="menu">
           <button type="button" class="avatar" data-accion="menu" aria-haspopup="true" aria-expanded="${S.menu}" aria-label="Tu cuenta">${esc(initials(P().nombre))}</button>
           ${S.menu ? menuPop() : ''}
         </div>
-      </div></header>
+      </div>
+      ${activo && activo.tabs.length > 1 ? `<nav class="subtabs" aria-label="${esc(activo.nombre)}"><div class="wrap subtabs-in">${activo.tabs.map((t) => `<button type="button" data-view="${t.id}"${S.view === t.id ? ' aria-current="page"' : ''}>${t.nombre}${badgeTxt(nTab(t))}</button>`).join('')}</div></nav>` : ''}</header>
       <main class="wrap page" id="contenido">${S.cargandoVista ? cargandoBloque() : S.errorVista ? errorVistaView() : vistaActual()}</main>
       <footer class="foot-site"><div class="wrap"><span><b>${esc(MARCA.nombre)}</b> — ${esc(MARCA.lema)}</span><span>${pie}</span></div></footer>
       ${S.lb ? lightboxView() : ''}${S.ajuste ? ajusteView() : ''}`;
@@ -618,6 +641,7 @@
       case 'comunicados': return comunicadosView();
       case 'asistencia': return asistenciaView();
       case 'informes': return informesView();
+      case 'viaticos': return viaticosView();
       case 'gestion': return gestionView();
       case 'solicitudes': return solicitudesView();
       case 'equipo': return equipoView();
@@ -1425,6 +1449,340 @@
       await cargarComunicados();
       toast(fallas ? `Comunicado publicado, pero ${plural(fallas, 'imagen no se pudo', 'imágenes no se pudieron')} subir.` : 'Comunicado publicado.', fallas ? 'warn' : 'ok');
     });
+  }
+
+  // ---------- Viáticos y legalización de gastos de viaje ----------
+  // El funcionario solicita (o la gerencia asigna); la gerencia fija el presupuesto y aprueba;
+  // el funcionario registra gastos con soporte y envía; la gerencia revisa y cierra con el saldo.
+  const VIA_ESTADOS = {
+    solicitado: { txt: 'Por aprobar', cls: 'warn' },
+    rechazado: { txt: 'Rechazado', cls: 'mute' },
+    aprobado: { txt: 'Por legalizar', cls: 'info' },
+    en_revision: { txt: 'Legalización en revisión', cls: 'warn' },
+    devuelto: { txt: 'Devuelto para corregir', cls: 'bad' },
+    cerrado: { txt: 'Legalizado', cls: 'ok' },
+    anulado: { txt: 'Anulado', cls: 'mute' },
+  };
+  const VIA_CAT = { alimentacion: 'Alimentación', hospedaje: 'Hospedaje', transporte: 'Transporte', propinas: 'Propinas', entradas: 'Entradas y tiquetes', otros: 'Otros' };
+  const VIA_ACTIVOS = ['solicitado', 'aprobado', 'en_revision', 'devuelto'];
+  const viaEstado = () => ({ lista: [], gastos: [], grupos: [], cargado: false, filtro: 'activos', abierto: null, form: null, gasto: null, archivo: null, rev: {}, noAcep: null, noMotivo: '', confirmar: null });
+  const pesos = (v) => COP.format(Math.round(Number(v) || 0)).replace(/\s/g, ' ');
+  const viaGastos = (id) => S.via.gastos.filter((g) => g.viatico_id === id);
+  const viaSuma = (gs) => gs.reduce((a, g) => a + Number(g.valor || 0), 0);
+  const viaFechas = (v) => (v.salida === v.regreso ? fechaCorta(v.salida) : `${fechaCorta(v.salida)} – ${fechaCorta(v.regreso)}`);
+  const viaGrupo = (v) => (v.grupo_id ? S.via.grupos.find((g) => g.id === v.grupo_id) : null);
+
+  // Insignia: a la gerencia, lo que espera su decisión; a cada quien, lo que debe legalizar o corregir
+  function viaticosPendientes() {
+    if (!S.via || !S.perfil) return 0;
+    const yo = P().id, hoy = fechaEn(miTz());
+    let n = 0;
+    S.via.lista.forEach((v) => {
+      if (esGerencia() && v.persona_id !== yo && (v.estado === 'solicitado' || v.estado === 'en_revision')) n++;
+      if (v.persona_id === yo && (v.estado === 'devuelto' || (v.estado === 'aprobado' && v.regreso < hoy))) n++;
+    });
+    return n;
+  }
+
+  async function cargarViaticos() {
+    const [lista, gastos, grupos] = await Promise.all([
+      todas(() => sb.from('viaticos').select('*').order('salida', { ascending: false }).order('id', { ascending: false })),
+      todas(() => sb.from('viatico_gastos').select('*').order('fecha').order('id')),
+      q(sb.from('grupos').select('id,nombre,destino,salida,regreso,estado').order('salida', { ascending: false }).limit(300)),
+    ]);
+    Object.assign(S.via, { lista, gastos, grupos, cargado: true });
+    if (S.via.abierto) await firmarVia(S.via.abierto);
+  }
+  // URL firmadas de los soportes del viático abierto
+  async function firmarVia(id) {
+    const gs = viaGastos(id).filter((g) => g.soporte_ruta);
+    if (!gs.length) return;
+    const filas = gs.map((g) => ({ ruta: g.soporte_ruta, g }));
+    await firmar('viaticos', filas);
+    filas.forEach((f) => { f.g.url = f.url; });
+  }
+  async function abrirViatico(id) {
+    const V = S.via, v = V.lista.find((x) => x.id === id);
+    if (!v) return;
+    Object.assign(V, { abierto: id, form: null, gasto: nuevoGastoVia(v), archivo: null, rev: { presupuesto: v.presupuesto || v.solicitado || '', comentario: '' }, noAcep: null, noMotivo: '', confirmar: null });
+    render();
+    window.scrollTo(0, 0);
+    try { await firmarVia(id); } catch (e) { /* sin vista previa de soportes */ }
+    render();
+  }
+  function nuevoGastoVia(v) {
+    const hoy = fechaEn(miTz());
+    const f = hoy < v.salida ? v.salida : hoy > v.regreso ? v.regreso : hoy;
+    return { fecha: f, categoria: 'alimentacion', descripcion: '', valor: '' };
+  }
+
+  function viaKpis(ger) {
+    const yo = P().id, L = ger ? S.via.lista : S.via.lista.filter((v) => v.persona_id === yo);
+    const k = (b, t, s) => `<div class="via-kpi"><span>${t}</span><b>${b}</b>${s ? `<small>${s}</small>` : ''}</div>`;
+    const enCurso = L.filter((v) => ['aprobado', 'en_revision', 'devuelto'].includes(v.estado));
+    const anticipos = viaSuma(enCurso.map((v) => ({ valor: v.presupuesto })));
+    if (ger) {
+      const porAprobar = L.filter((v) => v.estado === 'solicitado' && v.persona_id !== yo).length;
+      const porRevisar = L.filter((v) => v.estado === 'en_revision' && v.persona_id !== yo).length;
+      const cerr = L.filter((v) => v.estado === 'cerrado');
+      const aFavor = cerr.filter((v) => +v.saldo > 0).reduce((a, v) => a + +v.saldo, 0);
+      const reemb = cerr.filter((v) => +v.saldo < 0).reduce((a, v) => a - +v.saldo, 0);
+      return `<div class="via-kpis">${k(porAprobar, 'Solicitudes por aprobar')}${k(porRevisar, 'Legalizaciones por revisar')}${k(pesos(anticipos), 'Anticipos sin legalizar', plural(enCurso.length, 'viático', 'viáticos'))}${k(pesos(aFavor), 'Saldos a favor de Caminos', reemb ? `${pesos(reemb)} por reembolsar a funcionarios` : 'en viáticos legalizados')}</div>`;
+    }
+    const porLeg = L.filter((v) => v.estado === 'aprobado' || v.estado === 'devuelto').length;
+    return `<div class="via-kpis">${k(L.filter((v) => v.estado === 'solicitado').length, 'Solicitudes en espera')}${k(porLeg, 'Por legalizar')}${k(pesos(anticipos), 'Anticipos recibidos', 'sin legalizar aún')}${k(L.filter((v) => v.estado === 'cerrado').length, 'Legalizados')}</div>`;
+  }
+
+  function viaticosView() {
+    const V = S.via;
+    if (!V.cargado) return cargandoBloque();
+    if (V.abierto) {
+      const v = V.lista.find((x) => x.id === V.abierto);
+      if (v) return viaticoDetalle(v);
+      V.abierto = null;
+    }
+    const ger = esGerencia(), yo = P().id;
+    const acc = `<div class="via-acc-h"><button type="button" class="btn" data-viaform="solicitar">${ico('mas')}Solicitar viáticos</button>${ger ? `<button type="button" class="btn ghost" data-viaform="asignar">${ico('usuarioMas')}Asignar a un funcionario</button>` : ''}</div>`;
+    const cab = encabezado('Viajes', 'Viáticos y <em>legalización</em>', ger
+      ? 'Aprueba las solicitudes, asigna presupuestos y revisa las legalizaciones de gastos del equipo.'
+      : 'Solicita viáticos para tus viajes de acompañamiento y, al volver, legaliza tus gastos con los soportes.', acc);
+    const base = ger ? V.lista : V.lista.filter((v) => v.persona_id === yo);
+    const FILTROS = [
+      ['activos', 'En curso', (v) => VIA_ACTIVOS.includes(v.estado)],
+      ...(ger ? [['pendientes', 'Esperan mi revisión', (v) => v.persona_id !== yo && (v.estado === 'solicitado' || v.estado === 'en_revision')]] : []),
+      ['cerrados', 'Legalizados', (v) => v.estado === 'cerrado'],
+      ['todos', 'Todos', () => true],
+    ];
+    const fil = FILTROS.find((f) => f[0] === V.filtro) || FILTROS[0];
+    const lista = base.filter(fil[2]);
+    const chips = `<div class="via-filtros" role="group" aria-label="Filtrar">${FILTROS.map(([id, txt, fn]) => `<button type="button" class="chipbtn" data-viafiltro="${id}" aria-pressed="${fil[0] === id}">${txt} <b>${base.filter(fn).length}</b></button>`).join('')}</div>`;
+    const tarjetas = lista.map((v) => {
+      const E = VIA_ESTADOS[v.estado], gastado = viaSuma(viaGastos(v.id)), g = viaGrupo(v);
+      const pct = v.presupuesto ? Math.min(100, (gastado / v.presupuesto) * 100) : 0;
+      return `<li><button type="button" class="via-card" data-via="${v.id}">
+          <span class="via-card-h"><b>${esc(v.destino)}</b><span class="chip ${E.cls} xs">${E.txt}</span></span>
+          <span class="via-meta">${ger ? `<b>${esc(nombreDe(v.persona_id))}</b> · ` : ''}${esc(viaFechas(v))}${g ? ` · ${esc(g.nombre)}` : ''}</span>
+          <span class="via-monto"><span>${v.presupuesto ? `${pesos(gastado)} de ${pesos(v.presupuesto)}` : `Solicita ${v.solicitado ? pesos(v.solicitado) : 'sin monto'}`}</span>${v.estado === 'cerrado' && +v.saldo ? `<small>${+v.saldo > 0 ? 'Reintegra' : 'Se le reembolsa'} ${pesos(Math.abs(v.saldo))}</small>` : ''}</span>
+          ${v.presupuesto ? `<span class="meter${gastado > v.presupuesto ? ' bad' : ''}"><span style="width:${pct}%"></span></span>` : ''}
+        </button></li>`;
+    }).join('');
+    return cab + (V.form ? viaticoForm() : '') + viaKpis(ger) + chips
+      + (tarjetas ? `<ul class="via-lista">${tarjetas}</ul>` : `<p class="vacio card">${fil[0] === 'activos' ? 'No hay viáticos en curso.' : 'No hay viáticos en esta vista.'}${!base.length ? ' Toca «Solicitar viáticos» para pedir los de tu próximo viaje.' : ''}</p>`);
+  }
+
+  function viaticoForm() {
+    const F = S.via.form, asignar = F.modo === 'asignar';
+    const personas = activas().filter((p) => p.id !== P().id);
+    const grupos = S.via.grupos;
+    return `<form class="card via-form" data-form="viatico">
+        <div class="sec-h"><h2>${asignar ? 'Asignar viáticos a un funcionario' : 'Solicitar viáticos'}</h2><button type="button" class="btn txt sm" data-viaform="cerrar">${ico('x')}Cerrar</button></div>
+        <p class="hint">${asignar ? 'Quedan aprobados de una vez con el presupuesto que pongas. El funcionario los ve en su pestaña Viáticos para legalizarlos.' : 'La gerencia revisa tu solicitud, asigna el presupuesto y la aprueba.'}</p>
+        <div class="form-grid">
+          ${asignar ? `<label class="field"><span>Funcionario</span><select data-viab="persona" required><option value="">Elige una persona</option>${personas.map((p) => `<option value="${p.id}"${F.persona === p.id ? ' selected' : ''}>${esc(p.nombre)}</option>`).join('')}</select></label>` : ''}
+          <label class="field"><span>Grupo de viaje (opcional)</span><select data-viab="grupo"><option value="">Sin grupo</option>${grupos.map((g) => `<option value="${g.id}"${String(F.grupo) === String(g.id) ? ' selected' : ''}>${esc(g.nombre)}${g.salida ? ` · ${esc(fechaCorta(g.salida))}` : ''}</option>`).join('')}</select></label>
+          <label class="field"><span>Destino</span><input data-viab="destino" value="${esc(F.destino)}" maxlength="120" required placeholder="Ej.: Cartagena"></label>
+          <label class="field"><span>${asignar ? 'Presupuesto (COP)' : 'Monto que solicitas (COP)'}</span><input type="number" min="1" step="1" inputmode="numeric" data-viab="monto" value="${esc(F.monto)}"${asignar ? ' required' : ''} placeholder="Ej.: 800000"></label>
+          <label class="field"><span>Salida</span><input type="date" data-viab="salida" value="${esc(F.salida)}" required></label>
+          <label class="field"><span>Regreso</span><input type="date" data-viab="regreso" value="${esc(F.regreso)}" min="${esc(F.salida)}" required></label>
+          <label class="field ancho"><span>Motivo y detalle</span><textarea data-viab="motivo" rows="2" maxlength="1000" placeholder="Ej.: acompañamiento del grupo Colegio San José, 42 pasajeros; incluye alimentación y transporte local">${esc(F.motivo)}</textarea></label>
+        </div>
+        <div class="via-botones"><button type="submit" class="btn"${ocupado('viatico')}>${S.ocupado === 'viatico' ? 'Guardando…' : asignar ? 'Asignar y aprobar' : 'Enviar solicitud'}</button></div>
+      </form>`;
+  }
+
+  function viaticoDetalle(v) {
+    const V = S.via, yo = P().id, ger = esGerencia(), mio = v.persona_id === yo, revisa = ger && !mio;
+    const E = VIA_ESTADOS[v.estado], g = viaGrupo(v), gs = viaGastos(v.id);
+    const registrado = viaSuma(gs), aceptado = viaSuma(gs.filter((x) => !x.no_aceptado));
+    const saldo = (+v.presupuesto || 0) - aceptado;
+    const editable = mio && (v.estado === 'aprobado' || v.estado === 'devuelto');
+    const sinSoporte = gs.filter((x) => !x.soporte_ruta).length;
+    const tile = (t, b, s, cls) => `<div class="via-kpi${cls ? ' ' + cls : ''}"><span>${t}</span><b>${b}</b>${s ? `<small>${s}</small>` : ''}</div>`;
+    const saldoTxt = !v.presupuesto ? '—' : pesos(Math.abs(saldo));
+    const saldoSub = !v.presupuesto ? '' : saldo > 0 ? 'a favor de Caminos (lo reintegra el funcionario)' : saldo < 0 ? 'a favor del funcionario (se le reembolsa)' : 'sin saldo';
+    let partes = `<button type="button" class="btn txt sm via-volver" data-via="volver">${ico('izq')}Todos los viáticos</button>`;
+    partes += encabezado(`Viático No. ${v.id}`, `${esc(v.destino)} <span class="chip ${E.cls}">${E.txt}</span>`,
+      `${esc(nombreDe(v.persona_id))} · ${esc(viaFechas(v))}${g ? ` · grupo ${esc(g.nombre)}` : ''}${v.motivo ? `<br>${esc(v.motivo)}` : ''}`,
+      gs.length || v.estado === 'cerrado' ? `<button type="button" class="btn ghost sm" data-viaaccion="imprimir">${ico('documento')}${v.estado === 'cerrado' ? 'Formato de legalización' : 'Vista previa del formato'}</button>` : '');
+    partes += `<div class="via-kpis">${tile('Presupuesto', v.presupuesto ? pesos(v.presupuesto) : '—', v.solicitado ? `solicitó ${pesos(v.solicitado)}` : v.aprobado_por ? `asignó ${esc(primerNombre(nombreDe(v.aprobado_por)))}` : '')}${tile('Gastos registrados', pesos(registrado), plural(gs.length, 'gasto', 'gastos') + (sinSoporte ? ` · ${sinSoporte} sin soporte` : ''))}${tile(v.estado === 'cerrado' ? 'Legalizado' : 'Aceptado', pesos(aceptado), registrado !== aceptado ? `${pesos(registrado - aceptado)} no aceptado` : '')}${tile('Saldo', saldoTxt, saldoSub, saldo < 0 ? 'neg' : '')}</div>`;
+    if (v.comentario) {
+      const quien = v.revisado_por || v.aprobado_por;
+      partes += `<div class="notice ${v.estado === 'devuelto' || v.estado === 'rechazado' ? 'bad' : 'info'} via-nota">${ico('megafono')}<div><b>${quien ? esc(nombreDe(quien)) : 'Gerencia'}${v.estado === 'devuelto' ? ' te pide corregir' : ''}:</b><p>${esc(v.comentario)}</p></div></div>`;
+    }
+    const R = V.rev;
+    // Acciones según el estado y quién mira
+    if (v.estado === 'solicitado' && revisa) {
+      partes += `<section class="card via-caja"><h2>Aprobar solicitud</h2><p class="hint">${v.solicitado ? `Solicitó ${pesos(v.solicitado)}.` : 'No indicó monto.'} Asigna el presupuesto y aprueba, o rechaza con el motivo.</p>
+          <div class="form-grid"><label class="field"><span>Presupuesto asignado (COP)</span><input type="number" min="1" step="1" inputmode="numeric" data-viar="presupuesto" value="${esc(R.presupuesto)}"></label>
+          <label class="field"><span>Comentario (obligatorio para rechazar)</span><input data-viar="comentario" maxlength="1000" value="${esc(R.comentario)}"></label></div>
+          <div class="via-botones"><button type="button" class="btn ghost" data-viaaccion="rechazar"${ocupado('via')}>Rechazar</button><button type="button" class="btn" data-viaaccion="aprobar"${ocupado('via')}>${ico('check')}Aprobar</button></div></section>`;
+    } else if (v.estado === 'solicitado' && mio) {
+      partes += `<div class="notice">${ico('reloj')}<div><b>Tu solicitud está esperando la aprobación de gerencia.</b><p>Cuando la aprueben verás el presupuesto y podrás registrar tus gastos.</p></div></div>`;
+    }
+    if (v.estado === 'en_revision' && mio) partes += `<div class="notice info">${ico('reloj')}<div><b>Enviaste la legalización${v.enviado ? ` el ${esc(fechaCorta(fechaEn(miTz(), new Date(v.enviado))))}` : ''}.</b><p>La gerencia la está revisando.</p></div></div>`;
+    if (v.estado === 'en_revision' && revisa) {
+      partes += `<section class="card via-caja"><h2>Revisar legalización</h2><p class="hint">Revisa cada gasto y su soporte. Si alguno no corresponde, toca «No aceptar» y escribe el motivo: no cuenta en lo legalizado.</p>
+          <label class="field"><span>Comentario (obligatorio para devolver)</span><input data-viar="comentario" maxlength="1000" value="${esc(R.comentario)}"></label>
+          <div class="via-botones"><button type="button" class="btn ghost" data-viaaccion="devolver"${ocupado('via')}>Devolver para corregir</button><button type="button" class="btn" data-viaaccion="aprobarleg"${ocupado('via')}>${ico('check')}Aprobar legalización · ${pesos(aceptado)}</button></div></section>`;
+    }
+    if (editable) {
+      const G = V.gasto || nuevoGastoVia(v);
+      const min = sumarDias(v.salida, -7), max = sumarDias(v.regreso, 7);
+      partes += `<form class="card via-caja" data-form="viagasto"><h2>Registrar un gasto</h2>
+          <div class="via-gasto-grid">
+            <label class="field"><span>Fecha</span><input type="date" data-viag="fecha" value="${esc(G.fecha)}" min="${min}" max="${max}" required></label>
+            <label class="field"><span>Categoría</span><select data-viag="categoria">${Object.entries(VIA_CAT).map(([k, t]) => `<option value="${k}"${G.categoria === k ? ' selected' : ''}>${t}</option>`).join('')}</select></label>
+            <label class="field via-desc"><span>Descripción</span><input data-viag="descripcion" value="${esc(G.descripcion)}" maxlength="300" required placeholder="Ej.: almuerzo del grupo en el hotel"></label>
+            <label class="field"><span>Valor (COP)</span><input type="number" min="1" step="1" inputmode="numeric" data-viag="valor" value="${esc(G.valor)}" required></label>
+            <label class="field ancho"><span>Soporte: foto de la factura o PDF</span><input type="file" accept="image/jpeg,image/png,image/webp,image/heic,application/pdf" data-viaarchivo="1"></label>
+          </div>
+          <div class="via-botones"><button type="submit" class="btn"${ocupado('viagasto')}>${S.ocupado === 'viagasto' ? 'Guardando…' : `${ico('mas')}Agregar gasto`}</button></div></form>`;
+    }
+    // Tabla de gastos
+    const filas = gs.map((x) => {
+      const quitar = editable ? (V.confirmar === 'gasto:' + x.id
+        ? `<span class="confirmar">¿Quitar? <button type="button" class="btn danger sm" data-viaaccion="quitarsi:${x.id}"${ocupado('via')}>Sí</button><button type="button" class="btn txt sm" data-viaaccion="no">No</button></span>`
+        : `<button type="button" class="btn txt sm" data-viaaccion="quitar:${x.id}" aria-label="Quitar gasto">${ico('basura')}</button>`) : '';
+      let rev = '';
+      if (v.estado === 'en_revision' && revisa) {
+        rev = V.noAcep === x.id
+          ? `<span class="via-noacep"><input data-vianomot="1" value="${esc(V.noMotivo)}" maxlength="300" placeholder="Motivo" aria-label="Motivo para no aceptar"><button type="button" class="btn danger sm" data-viaaccion="noaceptarsi:${x.id}"${ocupado('via')}>No aceptar</button><button type="button" class="btn txt sm" data-viaaccion="no">Cancelar</button></span>`
+          : x.no_aceptado ? `<button type="button" class="btn txt sm" data-viaaccion="aceptar:${x.id}"${ocupado('via')}>Volver a aceptar</button>` : `<button type="button" class="btn txt sm" data-viaaccion="noaceptar:${x.id}">No aceptar</button>`;
+      }
+      const sop = x.soporte_ruta ? (x.url ? `<a href="${esc(x.url)}" target="_blank" rel="noopener">${ico('clip')}Ver</a>` : `${ico('clip')}Adjunto`) : '<span class="chip warn xs">Sin soporte</span>';
+      return `<tr class="${x.no_aceptado ? 'via-no' : ''}"><td>${esc(fechaCorta(x.fecha))}</td><td>${VIA_CAT[x.categoria] || esc(x.categoria)}</td><td>${esc(x.descripcion)}${x.no_aceptado ? `<small class="via-motivo">No aceptado: ${esc(x.no_aceptado)}</small>` : ''}</td><td class="num">${pesos(x.valor)}</td><td>${sop}</td><td class="via-acc-g">${quitar}${rev}</td></tr>`;
+    }).join('');
+    const porCat = {};
+    gs.filter((x) => !x.no_aceptado).forEach((x) => { porCat[x.categoria] = (porCat[x.categoria] || 0) + Number(x.valor); });
+    partes += `<section class="via-gastos"><div class="sec-h"><h2>Gastos</h2>${Object.keys(porCat).length ? `<span class="hint">${Object.entries(porCat).map(([k, t]) => `${VIA_CAT[k]} ${pesos(t)}`).join(' · ')}</span>` : ''}</div>
+        ${gs.length ? `<div class="tablewrap card flush"><table class="via-tabla"><thead><tr><th scope="col">Fecha</th><th scope="col">Categoría</th><th scope="col">Descripción</th><th scope="col" class="num">Valor</th><th scope="col">Soporte</th><th scope="col"><span class="sr">Acciones</span></th></tr></thead>
+          <tbody>${filas}</tbody><tfoot><tr><th scope="row" colspan="3">Total registrado</th><td class="num"><b>${pesos(registrado)}</b></td><td colspan="2"></td></tr></tfoot></table></div>`
+        : `<p class="vacio card">${editable ? 'Aún no registras gastos. Agrega cada uno con su soporte.' : 'Sin gastos registrados.'}</p>`}</section>`;
+    if (editable) {
+      partes += `<div class="via-enviar card"><div><b>¿Terminaste?</b><p class="hint">Envía la legalización para que la gerencia la revise. Después ya no podrás cambiar los gastos, salvo que te la devuelvan.${sinSoporte ? ` Ojo: ${plural(sinSoporte, 'gasto no tiene', 'gastos no tienen')} soporte.` : ''}</p></div>
+          <button type="button" class="btn" data-viaaccion="enviar"${gs.length ? '' : ' disabled'}${ocupado('via')}>Enviar legalización</button></div>`;
+    }
+    const puedeAnular = (mio && v.estado === 'solicitado') || (revisa && VIA_ACTIVOS.includes(v.estado));
+    if (puedeAnular) {
+      partes += V.confirmar === 'anular'
+        ? `<p class="confirmar via-anular">¿Anular este viático? <button type="button" class="btn danger sm" data-viaaccion="anularsi"${ocupado('via')}>Sí, anular</button><button type="button" class="btn txt sm" data-viaaccion="no">No</button></p>`
+        : `<p class="via-anular"><button type="button" class="btn txt sm" data-viaaccion="anular">${ico('x')}Anular viático</button></p>`;
+    }
+    return partes;
+  }
+
+  function imprimirLegalizacion(v) {
+    if (!window.Legalizacion) return;
+    const p = persona(v.persona_id) || {}, g = viaGrupo(v);
+    window.Legalizacion.abrir({
+      numero: v.id, funcionario: p.nombre || '', area: (areaDe(p.area_id) || {}).nombre || '', destino: v.destino, grupo: g ? g.nombre : '',
+      salida: v.salida, regreso: v.regreso, motivo: v.motivo, presupuesto: v.presupuesto, estado: v.estado, estadoTxt: VIA_ESTADOS[v.estado].txt,
+      aprobo: v.aprobado_por ? nombreDe(v.aprobado_por) : '', aprobado: v.aprobado, reviso: v.estado === 'cerrado' && v.revisado_por ? nombreDe(v.revisado_por) : '', revisado: v.revisado,
+      gastos: viaGastos(v.id).map((x) => ({ fecha: x.fecha, categoria: x.categoria, descripcion: x.descripcion, valor: x.valor, soporte: !!x.soporte_ruta, no_aceptado: x.no_aceptado })),
+    });
+  }
+
+  async function accionViatico(que) {
+    const V = S.via, v = V.lista.find((x) => x.id === V.abierto);
+    if (!v) return;
+    const [op, arg] = String(que).split(':');
+    const R = V.rev;
+    const recargar = async (msg) => { V.confirmar = null; V.noAcep = null; V.noMotivo = ''; await cargarViaticos(); if (msg) toast(msg); };
+    if (op === 'no') { V.confirmar = null; V.noAcep = null; render(); return; }
+    if (op === 'imprimir') { imprimirLegalizacion(v); return; }
+    if (op === 'anular') { V.confirmar = 'anular'; render(); return; }
+    if (op === 'quitar') { V.confirmar = 'gasto:' + arg; render(); return; }
+    if (op === 'noaceptar') { V.noAcep = +arg; V.noMotivo = ''; render(); const i = document.querySelector('[data-vianomot]'); if (i) i.focus(); return; }
+    await accion('via', async () => {
+      if (op === 'aprobar') {
+        if (!(+R.presupuesto > 0)) throw new Error('Asigna el presupuesto.');
+        await q(sb.rpc('aprobar_viatico', { p_id: v.id, p_presupuesto: +R.presupuesto, p_comentario: R.comentario || '' }));
+        await recargar(`Viático aprobado por ${pesos(R.presupuesto)}.`);
+      } else if (op === 'rechazar') {
+        if (String(R.comentario || '').trim().length < 3) throw new Error('Escribe en el comentario el motivo del rechazo.');
+        await q(sb.rpc('rechazar_viatico', { p_id: v.id, p_comentario: R.comentario }));
+        await recargar('Solicitud rechazada.');
+      } else if (op === 'enviar') {
+        await q(sb.rpc('enviar_legalizacion', { p_id: v.id }));
+        await recargar('Legalización enviada a gerencia.');
+      } else if (op === 'aprobarleg') {
+        const r = await q(sb.rpc('revisar_legalizacion', { p_id: v.id, p_aprobar: true, p_comentario: R.comentario || '' }));
+        const s = +((r && r.saldo) || 0);
+        await recargar(s > 0 ? `Legalización aprobada. ${nombreDe(v.persona_id)} reintegra ${pesos(s)}.` : s < 0 ? `Legalización aprobada. Caminos le reembolsa ${pesos(-s)}.` : 'Legalización aprobada, sin saldo.');
+      } else if (op === 'devolver') {
+        if (String(R.comentario || '').trim().length < 3) throw new Error('Escribe en el comentario qué debe corregir.');
+        await q(sb.rpc('revisar_legalizacion', { p_id: v.id, p_aprobar: false, p_comentario: R.comentario }));
+        await recargar('Legalización devuelta para corregir.');
+      } else if (op === 'noaceptarsi') {
+        if (String(V.noMotivo || '').trim().length < 3) throw new Error('Escribe el motivo.');
+        await q(sb.rpc('no_aceptar_gasto', { p_gasto: +arg, p_motivo: V.noMotivo }));
+        await recargar('Gasto marcado como no aceptado.');
+      } else if (op === 'aceptar') {
+        await q(sb.rpc('no_aceptar_gasto', { p_gasto: +arg, p_motivo: null }));
+        await recargar('Gasto aceptado de nuevo.');
+      } else if (op === 'quitarsi') {
+        const x = V.gastos.find((y) => y.id === +arg);
+        await q(sb.from('viatico_gastos').delete().eq('id', +arg));
+        if (x && x.soporte_ruta) { try { await sb.storage.from('viaticos').remove([x.soporte_ruta]); } catch (e) { /* el archivo queda huérfano */ } }
+        await recargar('Gasto quitado.');
+      } else if (op === 'anularsi') {
+        await q(sb.rpc('anular_viatico', { p_id: v.id, p_motivo: '' }));
+        await recargar('Viático anulado.');
+      }
+    });
+    if (V.abierto) { try { await firmarVia(V.abierto); } catch (e) { /* nada */ } render(); }
+  }
+
+  function abrirFormViatico(modo) {
+    S.via.form = { modo, persona: '', grupo: '', destino: '', monto: '', salida: '', regreso: '', motivo: '' };
+    S.via.abierto = null;
+    render();
+    const i = document.querySelector('.via-form select, .via-form input');
+    if (i) i.focus();
+  }
+
+  async function guardarViatico() {
+    const F = S.via.form;
+    if (!F) return;
+    const asignar = F.modo === 'asignar';
+    if (asignar && !F.persona) { toast('Elige el funcionario.', 'bad'); return; }
+    if (!String(F.destino || '').trim()) { toast('Escribe el destino.', 'bad'); return; }
+    if (!F.salida || !F.regreso) { toast('Pon las fechas de salida y regreso.', 'bad'); return; }
+    if (F.regreso < F.salida) { toast('El regreso no puede ser antes de la salida.', 'bad'); return; }
+    if (asignar && !(+F.monto > 0)) { toast('Pon el presupuesto.', 'bad'); return; }
+    await accion('viatico', async () => {
+      const comun = { p_destino: F.destino.trim(), p_salida: F.salida, p_regreso: F.regreso, p_motivo: F.motivo || '', p_grupo: F.grupo ? +F.grupo : null };
+      const r = asignar
+        ? await q(sb.rpc('asignar_viatico', { p_persona: F.persona, p_presupuesto: +F.monto, ...comun }))
+        : await q(sb.rpc('solicitar_viatico', { p_monto: +F.monto > 0 ? +F.monto : null, ...comun }));
+      S.via.form = null;
+      await cargarViaticos();
+      toast(asignar ? `Viáticos asignados a ${nombreDe(F.persona)}.` : 'Solicitud enviada a gerencia.');
+      if (r && r.id) { S.via.abierto = null; S.via.filtro = 'activos'; }
+    });
+  }
+
+  async function guardarGastoVia() {
+    const V = S.via, v = V.lista.find((x) => x.id === V.abierto), G = V.gasto;
+    if (!v || !G) return;
+    if (!G.fecha) { toast('Pon la fecha del gasto.', 'bad'); return; }
+    if (!String(G.descripcion || '').trim()) { toast('Escribe la descripción.', 'bad'); return; }
+    if (!(+G.valor > 0)) { toast('Pon el valor del gasto.', 'bad'); return; }
+    await accion('viagasto', async () => {
+      let ruta = null, nombre = null;
+      if (V.archivo) {
+        const { subidos } = await subirArchivos('viaticos', v.id, [V.archivo]);
+        if (!subidos.length) throw new Error('No se pudo subir el soporte. Prueba con una foto o un PDF de menos de 10 MB.');
+        ruta = subidos[0].ruta; nombre = subidos[0].nombre;
+      }
+      await q(sb.from('viatico_gastos').insert({ viatico_id: v.id, fecha: G.fecha, categoria: G.categoria, descripcion: G.descripcion.trim(), valor: Math.round(+G.valor), soporte_ruta: ruta, soporte_nombre: nombre }));
+      V.gasto = { ...nuevoGastoVia(v), fecha: G.fecha, categoria: G.categoria };
+      V.archivo = null;
+      await cargarViaticos();
+      toast(ruta ? 'Gasto agregado con su soporte.' : 'Gasto agregado (sin soporte).');
+    });
+    try { await firmarVia(v.id); } catch (e) { /* nada */ }
+    render();
   }
 
   // ---------- Entrada temprana autorizada ----------
@@ -3741,6 +4099,15 @@
           <li>Si te autorizaron a <b>entrar y salir más temprano</b>, al marcar la entrada (${t.temprano} min o más antes de tu turno) se abre una ventana: escribe el motivo, si cambia tu hora de salida y quién lo autorizó. Así tu salida no cuenta como «salida antes». Si la cerraste, en el pase aparece «Registrar autorización».</li>
           <li>Si tienes vacaciones, permiso o incapacidad aprobados, ese día no tienes que marcar.</li>
         </ul>` },
+      { id: 'viaticos', titulo: 'Viáticos y legalización de gastos', ver: true, html: `<p>Está en <b>Viajes › Viáticos</b>. Sirve para los viajes de acompañamiento de grupos.</p>
+        <ol>
+          <li><b>Solicita</b> los viáticos: destino, fechas, el grupo (si lo eliges, se llenan solos el destino y las fechas) y el monto. ${esGerencia() ? 'Como gerencia también puedes <b>asignarlos</b> directamente a un funcionario: quedan aprobados con el presupuesto que pongas.' : 'La gerencia también puede asignártelos directamente.'}</li>
+          <li>La <b>gerencia</b> fija el presupuesto y aprueba, o rechaza con el motivo.</li>
+          <li>Durante y después del viaje, <b>registra cada gasto</b> con la foto de la factura o un PDF. Puedes quitar o agregar gastos hasta enviar.</li>
+          <li>Toca <b>Enviar legalización</b>. La gerencia revisa: puede no aceptar un gasto (con el motivo), devolverte la legalización para corregir o aprobarla.</li>
+          <li>Al aprobar queda el <b>saldo</b>: si gastaste menos, lo reintegras a Caminos; si gastaste más, Caminos te lo reembolsa. El botón «Formato de legalización» baja el documento para firmar.</li>
+        </ol>
+        <p>Cada quien ve solo sus viáticos; la gerencia ve los de todos. Nadie se aprueba a sí mismo.</p>` },
       { id: 'grupos', titulo: 'Grupos de viaje', ver: true, html: `<ul>
           <li><b>Tablero:</b> cada grupo es una tarjeta en una de siete columnas: Cotización / costeo, Propuesta comercial, Aprobado parroquia, Gestión comercial (bloqueos y lanzamiento), Ejecución grupo, En destino y Finalizado. Arrástrala a otra columna o usa las flechas de la tarjeta (en el celular, desliza para ver las demás columnas).</li>
           <li><b>Nuevo grupo:</b> nombre, destino, parroquia, fechas de salida y regreso, pasajeros, responsable, alcance y notas internas. Toca el nombre de una tarjeta para cambiarla o eliminarla.</li>
@@ -4182,13 +4549,15 @@
   // ---------- Navegación ----------
   const CARGAS = {
     inicio: cargarInicio, grupos: cargarGrupos, malla: cargarMalla, comunicados: cargarComunicados, asistencia: cargarAsistencia,
-    informes: cargarInforme, gestion: cargarGestion, solicitudes: cargarSolicitudes, equipo: recargarPersonas, tarjeta: cargarTarjeta, oficina: cargarOficina,
+    informes: cargarInforme, viaticos: cargarViaticos, gestion: cargarGestion, solicitudes: cargarSolicitudes, equipo: recargarPersonas, tarjeta: cargarTarjeta, oficina: cargarOficina,
   };
   let navegacion = 0;
   async function ir(view) {
     if (!puedeVer(view)) view = 'inicio';
     const yo = ++navegacion;
     S.view = view;
+    const gNav = GRUPOS_NAV.find((g) => g.vistas.includes(view));
+    if (gNav) S.navUltima[gNav.id] = view;
     S.menu = false;
     S.errorVista = '';
     S.cargandoVista = true;
@@ -4213,7 +4582,7 @@
   }
 
   // ---------- Eventos ----------
-  const ACCIONES = '[data-view],[data-accion],[data-marcar],[data-semana],[data-mvista],[data-editar],[data-leer],[data-comf],[data-borrarcom],[data-lb],[data-lbmover],[data-quitarimg],[data-revisar],[data-cancelarsol],[data-lbsol],[data-quitarsop],[data-revquitar],[data-selinf],[data-orden],[data-restablecer],[data-activar],[data-copiar],[data-guia],[data-soltipo],[data-confirmar],[data-demo],[data-gvista],[data-gver],[data-gabrir],[data-gmover],[data-gmes],[data-gborrar],[data-tcfiltro],[data-tcpest],[data-tcpaso],[data-tcfiltrog],[data-gfiltro],[data-gmesf],[data-gquitar],[data-gmedida],[data-gorden],[data-eqpest],[data-cx],[data-cxpedir],[data-cc],[data-ccpdf],[data-ccpedir],[data-ccestado]';
+  const ACCIONES = '[data-view],[data-accion],[data-marcar],[data-semana],[data-mvista],[data-editar],[data-leer],[data-comf],[data-borrarcom],[data-lb],[data-lbmover],[data-quitarimg],[data-revisar],[data-cancelarsol],[data-lbsol],[data-quitarsop],[data-revquitar],[data-selinf],[data-orden],[data-restablecer],[data-activar],[data-copiar],[data-guia],[data-soltipo],[data-confirmar],[data-demo],[data-gvista],[data-gver],[data-gabrir],[data-gmover],[data-gmes],[data-gborrar],[data-tcfiltro],[data-tcpest],[data-tcpaso],[data-tcfiltrog],[data-gfiltro],[data-gmesf],[data-gquitar],[data-gmedida],[data-gorden],[data-eqpest],[data-cx],[data-cxpedir],[data-cc],[data-ccpdf],[data-ccpedir],[data-ccestado],[data-via],[data-viaform],[data-viafiltro],[data-viaaccion]';
 
   document.addEventListener('click', async (ev) => {
     if (fichaG.id && !(ev.target.closest && (ev.target.closest('#gficha') || ev.target.closest('[data-gver]')))) {
@@ -4230,6 +4599,10 @@
     const d = el.dataset;
     if (el.tagName === 'A' && d.view) ev.preventDefault();
 
+    if (d.via) { if (d.via === 'volver') { S.via.abierto = null; render(); window.scrollTo(0, 0); } else await abrirViatico(+d.via); return; }
+    if (d.viaform) { if (d.viaform === 'cerrar') { S.via.form = null; render(); } else abrirFormViatico(d.viaform); return; }
+    if (d.viafiltro) { S.via.filtro = d.viafiltro; render(); return; }
+    if (d.viaaccion) { await accionViatico(d.viaaccion); return; }
     if (d.view) {
       const idCom = d.irCom;
       await ir(d.view);
@@ -4707,6 +5080,8 @@
       return;
     }
     if (tipo === 'olvido') { await pedirEnlace(f.correo.value.trim().toLowerCase()); return; }
+    if (tipo === 'viatico') { await guardarViatico(); return; }
+    if (tipo === 'viagasto') { await guardarGastoVia(); return; }
     if (tipo === 'ajuste') {
       const A = S.ajuste;
       if (!A) return;
@@ -4769,6 +5144,13 @@
   const borradorDe = (k) => (k === 'com' ? S.com.borrador : k === 'sol' ? S.sol.borrador : k === 'grupo' ? S.grupos.borrador : k === 'tc' ? S.tc.borrador : S.equipo.borrador);
   document.addEventListener('input', (ev) => {
     const el = ev.target;
+    if (el.dataset && S.via) {
+      const dv = el.dataset;
+      if (dv.viab && S.via.form) { S.via.form[dv.viab] = el.value; if (dv.viab !== 'grupo') return; }
+      if (dv.viag) { S.via.gasto = S.via.gasto || {}; S.via.gasto[dv.viag] = el.value; return; }
+      if (dv.viar) { S.via.rev[dv.viar] = el.value; return; }
+      if (dv.vianomot) { S.via.noMotivo = el.value; return; }
+    }
     if (el.dataset && el.dataset.aj && S.ajuste) {
       S.ajuste[el.dataset.aj] = el.value;
       if (el.dataset.aj === 'salida') { S.ajuste.opcion = 'otra'; const r = document.querySelector('input[name=opcion][value=otra]'); if (r) r.checked = true; }
@@ -4812,6 +5194,18 @@
 
   document.addEventListener('change', async (ev) => {
     const el = ev.target, d = el.dataset || {};
+    if (d.viaarchivo) { S.via.archivo = el.files && el.files[0] ? el.files[0] : null; return; }
+    if (d.viab && S.via.form) {
+      const F = S.via.form;
+      F[d.viab] = el.value;
+      if (d.viab === 'grupo' && el.value) {
+        const g = S.via.grupos.find((x) => String(x.id) === el.value);
+        if (g) { if (g.destino) F.destino = g.destino; if (g.salida) F.salida = g.salida; if (g.regreso) F.regreso = g.regreso; }
+        render();
+      }
+      return;
+    }
+    if (d.viag || d.viar || d.vianomot) return;
     if (d.aj && S.ajuste) { S.ajuste[d.aj] = el.value; if (d.aj === 'salida') S.ajuste.opcion = 'otra'; return; }
     if (d.gsel) { S.ges.f[d.gsel] = el.value; render(); return; }
     if (d.ccsel) { S.ges.cc[d.ccsel] = el.value; if (d.ccsel === 'cliente') S.ges.cc.quitadas = new Set(); render(); return; }

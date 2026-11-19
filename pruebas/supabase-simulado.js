@@ -85,7 +85,7 @@
       { id: 4, nombre: 'Página web de Caminos', descripcion: 'El sitio oficial de la agencia, el que ven los clientes.', icono: 'globo', pie: 'Sitio web', url: 'https://agenciacaminos.com.co/', orden: 4, areas_visibles: null, activo: true },
     ],
     comunicados: [], comunicado_imagenes: [], comunicado_lecturas: [], solicitudes: [], solicitud_adjuntos: [], revisores: [],
-    grupos: [], equipos: [],
+    grupos: [], equipos: [], viaticos: [], viatico_gastos: [],
     tc_tarjetas: [], tc_categorias: [], tc_extractos: [], tc_registros: [], tc_movimientos: [],
     ventas_informe: [], ventas_estado: [],
     clientes_ext: [], ventas_cliente: [], cobros_cliente: [], cuentas_cliente: [], cuentas_cobro: [], cuentas_cobro_ventas: [],
@@ -93,7 +93,7 @@
   // IP con la que «llega» el navegador de la demostración y llaves de los computadores autorizados
   const IP_DEMO = '190.25.14.7';
   const llavesEquipo = {};
-  const SERIAL = ['sedes', 'areas', 'turnos', 'malla_historial', 'marcas', 'herramientas', 'comunicados', 'comunicado_imagenes', 'solicitudes', 'solicitud_adjuntos', 'grupos', 'equipos', 'tc_tarjetas', 'tc_categorias', 'tc_extractos', 'tc_registros', 'tc_movimientos'];
+  const SERIAL = ['sedes', 'areas', 'turnos', 'malla_historial', 'marcas', 'herramientas', 'comunicados', 'comunicado_imagenes', 'solicitudes', 'solicitud_adjuntos', 'grupos', 'equipos', 'viaticos', 'viatico_gastos', 'tc_tarjetas', 'tc_categorias', 'tc_extractos', 'tc_registros', 'tc_movimientos'];
   const CLAVES = {
     malla: ['persona_id', 'fecha'], horario_base: ['persona_id', 'semana', 'dia'], horario_rotacion: ['persona_id'], comunicado_lecturas: ['comunicado_id', 'persona_id'],
     revisores: ['persona_id'], configuracion: ['clave'], perfiles: ['id'], turnos: ['sede_id', 'codigo'], marcas: ['persona_id', 'fecha', 'tipo'], ajustes_jornada: ['persona_id', 'fecha'],
@@ -257,6 +257,34 @@
     responsable_id: resp ? ID[resp] : null, alcance, notas: '', estado, creado_por: ID.carolina, creado: sumarDias(HOY, -30) + 'T15:00:00Z',
     actualizado: sumarDias(HOY, -2) + 'T15:00:00Z', actualizado_por: ID.carolina,
   }));
+  // Viáticos de ejemplo: una solicitud por aprobar, uno aprobado, uno por legalizar, uno en revisión y uno legalizado
+  (function () {
+    const grupo = (n) => (db.grupos.find((g) => g.nombre === n) || {}).id || null;
+    const ts = (d) => sumarDias(HOY, d) + 'T15:00:00Z';
+    const V = [
+      { persona: 'daniela', grupo: 'Colegio San José · Grado 11', destino: 'Cartagena', a: 5, b: 9, solicitado: 900000, estado: 'solicitado', motivo: 'Acompañamiento del grupo del colegio, 42 pasajeros.' },
+      { persona: 'santiago', grupo: 'Peregrinación Las Lajas', destino: 'Ipiales', a: 12, b: 15, presupuesto: 1100000, estado: 'aprobado', motivo: 'Acompañamiento de la peregrinación.' },
+      { persona: 'daniela', grupo: null, destino: 'Girardot', a: -16, b: -14, presupuesto: 450000, estado: 'aprobado', motivo: 'Acompañamiento de un grupo de jubilados.' },
+      { persona: 'valentina', grupo: 'Pasadía Chiquinquirá', destino: 'Chiquinquirá', a: -20, b: -20, presupuesto: 250000, estado: 'en_revision', motivo: 'Pasadía con la parroquia.', enviado: -18 },
+      { persona: 'felipe', grupo: null, destino: 'Santa Marta', a: -40, b: -36, presupuesto: 1500000, estado: 'cerrado', motivo: 'Acompañamiento de un grupo empresarial.', enviado: -33, revisado: -31 },
+    ];
+    V.forEach((x, i) => db.viaticos.push({
+      id: i + 1, persona_id: ID[x.persona], grupo_id: x.grupo ? grupo(x.grupo) : null, destino: x.destino, motivo: x.motivo, salida: sumarDias(HOY, x.a), regreso: sumarDias(HOY, x.b),
+      solicitado: x.solicitado || null, presupuesto: x.presupuesto || null, estado: x.estado, comentario: '', creado_por: x.solicitado ? ID[x.persona] : ID.andrea, creado: ts(x.a - 10),
+      aprobado_por: x.presupuesto ? ID.andrea : null, aprobado: x.presupuesto ? ts(x.a - 7) : null, enviado: x.enviado ? ts(x.enviado) : null,
+      revisado_por: x.revisado ? ID.andrea : null, revisado: x.revisado ? ts(x.revisado) : null, legalizado: null, saldo: null, actualizado: ts(-1),
+    }));
+    const G = [
+      [3, -16, 'transporte', 'Bus de ida al hotel', 60000, true], [3, -15, 'alimentacion', 'Almuerzo y cena', 95000, true],
+      [4, -20, 'alimentacion', 'Almuerzo en Chiquinquirá', 38000, true], [4, -20, 'transporte', 'Taxi terminal', 25000, false], [4, -20, 'propinas', 'Propina guía de la basílica', 20000, true],
+      [5, -40, 'hospedaje', 'Hotel 4 noches (habitación del acompañante)', 720000, true], [5, -39, 'alimentacion', 'Alimentación 5 días', 410000, true],
+      [5, -38, 'transporte', 'Transporte local', 180000, true], [5, -37, 'entradas', 'Entrada Parque Tayrona', 72000, true], [5, -37, 'otros', 'Recuerdos', 45000, true],
+    ];
+    G.forEach(([vid, d, categoria, descripcion, valor, sop], i) => db.viatico_gastos.push({ id: i + 1, viatico_id: vid, fecha: sumarDias(HOY, d), categoria, descripcion, valor, soporte_ruta: sop ? `${vid}/ejemplo-${i + 1}.jpg` : null, soporte_nombre: sop ? 'factura.jpg' : null, no_aceptado: vid === 5 && descripcion === 'Recuerdos' ? 'No es un gasto del viaje' : null, creado: ts(d) }));
+    const cerr = db.viaticos[4], acep = db.viatico_gastos.filter((g) => g.viatico_id === 5 && !g.no_aceptado).reduce((a, g) => a + g.valor, 0);
+    Object.assign(cerr, { legalizado: acep, saldo: cerr.presupuesto - acep });
+  })();
+
   // Conciliación de la tarjeta (datos ficticios): un periodo cerrado y el actual abierto
   (function () {
     ['Tiquetes aéreos', 'Hoteles y alojamiento', 'Operadores y proveedores turísticos', 'Transporte terrestre', 'Publicidad y marketing', 'Software y suscripciones',
@@ -450,9 +478,30 @@
   const comVisible = (c) => c.autor_id === uid() || esGerencia() || puedePublicar() || esDestinatario(c, uid());
 
   // Reglas de lectura (USING de select)
+  const viaVisible = (id) => { const v = db.viaticos.find((x) => x.id === id); return !!v && (v.persona_id === uid() || esGerencia()); };
+  const viaEditable = (id) => { const v = db.viaticos.find((x) => x.id === id); return !!v && v.persona_id === uid() && ['aprobado', 'devuelto'].includes(v.estado); };
+  function viaValidar(d, a, b) {
+    if (!String(d || '').trim()) throw err('Escribe el destino.');
+    if (!a || !b) throw err('Pon las fechas de salida y regreso.');
+    if (b < a) throw err('El regreso no puede ser antes de la salida.');
+  }
+  function viaNuevo(campos) {
+    const v = Object.assign({ id: sigId.viaticos++, comentario: '', creado_por: uid(), creado: ahoraISO(), aprobado_por: null, aprobado: null, enviado: null, revisado_por: null, revisado: null, legalizado: null, saldo: null, actualizado: ahoraISO() }, campos);
+    db.viaticos.push(v);
+    return v;
+  }
+  function viaRevisable(id, verbo) {
+    if (!esGerencia()) throw err(`Solo la gerencia ${verbo} viáticos.`);
+    const v = db.viaticos.find((x) => x.id === id);
+    if (!v) throw err('El viático no existe.');
+    if (v.persona_id === uid()) throw err('No puedes revisar tus propios viáticos.');
+    return v;
+  }
   const LEER = {
     marcas: (r) => r.persona_id === uid() || lideraSede(perfil(r.persona_id).sede_id),
     ajustes_jornada: (r) => r.persona_id === uid() || r.autorizo === uid() || lideraSede(perfil(r.persona_id).sede_id),
+    viaticos: (r) => r.persona_id === uid() || esGerencia(),
+    viatico_gastos: (r) => viaVisible(r.viatico_id),
     comunicados: comVisible,
     comunicado_imagenes: (r) => { const c = db.comunicados.find((x) => x.id === r.comunicado_id); return !!c && comVisible(c); },
     comunicado_lecturas: (r) => r.persona_id === uid() || esGerencia() || puedePublicar(),
@@ -487,6 +536,13 @@
     horario_rotacion: (r) => lideraSede(sedeDePersona(r.persona_id)) || esSupervisor(),
     marcas: (r, op) => op !== 'insert' && lideraSede(sedeDePersona(r.persona_id)),
     ajustes_jornada: (r, op) => op === 'delete' && lideraSede(sedeDePersona(r.persona_id)),
+    viaticos: () => false,
+    viatico_gastos: (r, op) => {
+      const v = db.viaticos.find((x) => x.id === r.viatico_id);
+      if (!viaEditable(r.viatico_id)) return false;
+      if (op === 'insert' && r.no_aceptado) return false;
+      return op === 'delete' || (r.fecha >= sumarDias(v.salida, -7) && r.fecha <= sumarDias(v.regreso, 7));
+    },
     comunicados: (r, op) => (op === 'insert' ? puedePublicar() && r.autor_id === uid() : r.autor_id === uid() || esGerencia()),
     comunicado_imagenes: (r) => autorOGerencia(r.comunicado_id),
     comunicado_lecturas: (r, op) => op === 'insert' && r.persona_id === uid() && esDestinatario(db.comunicados.find((c) => c.id === r.comunicado_id) || {}, uid()),
@@ -515,6 +571,7 @@
     tc_extractos: () => ({ saldo_anterior: 0, saldo_nuevo: null, pago_minimo: null, fecha_pago: null, estado: 'abierto', cerrado_por: null, cerrado_en: null, notas: '', creado: ahoraISO(), creado_por: uid() }),
     tc_registros: () => ({ categoria_id: null, grupo_id: null, responsable_id: null, soporte_ruta: null, soporte_nombre: null, creado: ahoraISO(), creado_por: uid() }),
     tc_movimientos: () => ({ tipo: 'compra', moneda: 'COP', valor_origen: null, cuotas: null, autorizacion: null, categoria_id: null, grupo_id: null, responsable_id: null, estado: 'pendiente', registro_id: null, soporte_ruta: null, soporte_nombre: null, nota: '', conciliado_por: null, conciliado_en: null, creado: ahoraISO() }),
+    viatico_gastos: () => ({ soporte_ruta: null, soporte_nombre: null, no_aceptado: null, creado: ahoraISO() }),
     grupos: () => ({ destino: '', parroquia: '', salida: null, regreso: null, pasajeros: null, responsable_id: null, alcance: '', notas: '', estado: 'cotizando', creado_por: uid(), creado: ahoraISO(), actualizado: ahoraISO(), actualizado_por: uid() }),
   };
   const tcAbierto = (id) => db.tc_extractos.some((e) => e.id === id && e.estado === 'abierto');
@@ -532,6 +589,7 @@
     if (tabla === 'turnos' && ((!r.entrada) !== (!r.salida) || (!r.salida_almuerzo) !== (!r.regreso_almuerzo))) return err('new row for relation "turnos" violates check constraint', '23514');
     if (tabla === 'solicitudes' && (r.hasta < r.desde || (!r.hora_desde) !== (!r.hora_hasta))) return err('new row for relation "solicitudes" violates check constraint', '23514');
     if (tabla === 'comunicados' && (!r.titulo || r.titulo.length > 140)) return err('new row for relation "comunicados" violates check constraint', '23514');
+    if (tabla === 'viatico_gastos' && (!String(r.descripcion || '').trim() || !(Number(r.valor) > 0) || !['alimentacion', 'hospedaje', 'transporte', 'propinas', 'entradas', 'otros'].includes(r.categoria))) return err('new row for relation "viatico_gastos" violates check constraint', '23514');
     if (tabla === 'revisores' && (!r.tipos || !r.tipos.length)) return err('new row for relation "revisores" violates check constraint', '23514');
     if (tabla === 'grupos' && (String(r.parroquia || '').length > 120 || !String(r.nombre || '').trim() || (r.salida && r.regreso && r.regreso < r.salida) || !['cotizando', 'propuesta', 'confirmado', 'gestion', 'documentacion', 'en_viaje', 'finalizado'].includes(r.estado))) return err('new row for relation "grupos" violates check constraint', '23514');
     return null;
@@ -746,6 +804,67 @@
       db.marcas.push(m);
       return m;
     },
+    // ---------- Viáticos ----------
+    solicitar_viatico({ p_destino, p_salida, p_regreso, p_monto, p_motivo, p_grupo }) {
+      if (!yo()) throw err('Tu cuenta no está activa.');
+      viaValidar(p_destino, p_salida, p_regreso);
+      if (p_monto != null && !(+p_monto > 0)) throw err('El monto debe ser mayor que cero.');
+      return viaNuevo({ persona_id: uid(), grupo_id: p_grupo || null, destino: String(p_destino).trim(), motivo: String(p_motivo || '').trim(), salida: p_salida, regreso: p_regreso, solicitado: p_monto == null ? null : +p_monto, presupuesto: null, estado: 'solicitado' });
+    },
+    asignar_viatico({ p_persona, p_destino, p_salida, p_regreso, p_presupuesto, p_motivo, p_grupo }) {
+      if (!esGerencia()) throw err('Solo la gerencia asigna viáticos.');
+      if (p_persona === uid()) throw err('No puedes asignarte viáticos a ti mismo: solicítalos y que otra persona de gerencia los apruebe.');
+      if (!db.perfiles.some((x) => x.id === p_persona && x.activo)) throw err('Elige un funcionario activo.');
+      viaValidar(p_destino, p_salida, p_regreso);
+      if (!(+p_presupuesto > 0)) throw err('Asigna el presupuesto.');
+      return viaNuevo({ persona_id: p_persona, grupo_id: p_grupo || null, destino: String(p_destino).trim(), motivo: String(p_motivo || '').trim(), salida: p_salida, regreso: p_regreso, solicitado: null, presupuesto: +p_presupuesto, estado: 'aprobado', aprobado_por: uid(), aprobado: ahoraISO() });
+    },
+    aprobar_viatico({ p_id, p_presupuesto, p_comentario }) {
+      const v = viaRevisable(p_id, 'aprueba');
+      if (v.estado !== 'solicitado') throw err('Este viático ya no está por aprobar.');
+      if (!(+p_presupuesto > 0)) throw err('Asigna el presupuesto.');
+      return Object.assign(v, { estado: 'aprobado', presupuesto: +p_presupuesto, comentario: String(p_comentario || '').trim(), aprobado_por: uid(), aprobado: ahoraISO(), actualizado: ahoraISO() });
+    },
+    rechazar_viatico({ p_id, p_comentario }) {
+      const v = viaRevisable(p_id, 'rechaza');
+      if (v.estado !== 'solicitado') throw err('Este viático ya no está por aprobar.');
+      if (String(p_comentario || '').trim().length < 3) throw err('Escribe el motivo del rechazo.');
+      return Object.assign(v, { estado: 'rechazado', comentario: String(p_comentario).trim(), revisado_por: uid(), revisado: ahoraISO(), actualizado: ahoraISO() });
+    },
+    enviar_legalizacion({ p_id }) {
+      const v = db.viaticos.find((x) => x.id === p_id);
+      if (!v || v.persona_id !== uid()) throw err('El viático no existe.');
+      if (!['aprobado', 'devuelto'].includes(v.estado)) throw err('Este viático no está para legalizar.');
+      if (!db.viatico_gastos.some((g) => g.viatico_id === p_id)) throw err('Registra al menos un gasto antes de enviar.');
+      return Object.assign(v, { estado: 'en_revision', enviado: ahoraISO(), actualizado: ahoraISO() });
+    },
+    no_aceptar_gasto({ p_gasto, p_motivo }) {
+      const g = db.viatico_gastos.find((x) => x.id === p_gasto);
+      if (!g) throw err('El gasto no existe.');
+      const v = viaRevisable(g.viatico_id, 'revisa');
+      if (v.estado !== 'en_revision') throw err('La legalización no está en revisión.');
+      const m = String(p_motivo || '').trim();
+      if (m && m.length < 3) throw err('Escribe el motivo.');
+      g.no_aceptado = m || null;
+      return g;
+    },
+    revisar_legalizacion({ p_id, p_aprobar, p_comentario }) {
+      const v = viaRevisable(p_id, 'revisa');
+      if (v.estado !== 'en_revision') throw err('La legalización no está en revisión.');
+      if (p_aprobar) {
+        const total = db.viatico_gastos.filter((g) => g.viatico_id === p_id && !g.no_aceptado).reduce((a, g) => a + Number(g.valor), 0);
+        return Object.assign(v, { estado: 'cerrado', legalizado: total, saldo: v.presupuesto - total, comentario: String(p_comentario || '').trim(), revisado_por: uid(), revisado: ahoraISO(), actualizado: ahoraISO() });
+      }
+      if (String(p_comentario || '').trim().length < 3) throw err('Escribe qué debe corregir.');
+      return Object.assign(v, { estado: 'devuelto', comentario: String(p_comentario).trim(), revisado_por: uid(), revisado: ahoraISO(), actualizado: ahoraISO() });
+    },
+    anular_viatico({ p_id, p_motivo }) {
+      const v = db.viaticos.find((x) => x.id === p_id);
+      if (!v || !(v.persona_id === uid() || esGerencia())) throw err('El viático no existe.');
+      if (esGerencia() && v.persona_id !== uid()) { if (['cerrado', 'anulado', 'rechazado'].includes(v.estado)) throw err('Este viático ya no se puede anular.'); }
+      else if (v.estado !== 'solicitado') throw err('Solo puedes anular tu solicitud mientras no la aprueben.');
+      return Object.assign(v, { estado: 'anulado', comentario: String(p_motivo || '').trim() || v.comentario, actualizado: ahoraISO() });
+    },
     ajustar_jornada({ p_motivo, p_salida, p_autorizo }) {
       const p = yo();
       if (!p) throw err('Tu cuenta no está activa.');
@@ -959,7 +1078,7 @@
       async upload(ruta, archivo) {
         await espera();
         const id = Number(String(ruta).split('/')[0]);
-        const ok = bucket === 'conciliacion' ? esGerencia() : bucket === 'comunicados' ? autorOGerencia(id) : solPendientePropia(id);
+        const ok = bucket === 'conciliacion' ? esGerencia() : bucket === 'comunicados' ? autorOGerencia(id) : bucket === 'viaticos' ? viaEditable(id) : solPendientePropia(id);
         if (!ok) return { data: null, error: err('new row violates row-level security policy', '42501') };
         archivos[bucket + '/' + ruta] = URL.createObjectURL(archivo);
         return { data: { path: ruta }, error: null };

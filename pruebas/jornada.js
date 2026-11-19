@@ -2,6 +2,13 @@
 // con el Supabase simulado y el reloj fijo en un lunes a las 6:10 a. m. (Bogotá).
 // Uso: servir intranet/ en :8765 y correr  node pruebas/jornada.js
 const { chromium } = require('playwright');
+async function irVista(page, v) {
+  if (!(await page.$(`header.top .subtabs [data-view="${v}"]`))) await page.click(`header.top .tabs [data-vistas~="${v}"]`);
+  const sub = `header.top .subtabs [data-view="${v}"]`;
+  if (await page.$(sub)) { await page.waitForFunction(() => !document.querySelector('.cargando')); await page.click(sub); }
+  await page.waitForFunction((v) => location.hash === '#' + v && !document.querySelector('.cargando'), v);
+}
+
 const fs = require('fs');
 const BASE = process.env.BASE || 'http://localhost:8765/pruebas/demo.html';
 
@@ -80,14 +87,14 @@ const a_las = (hhmm) => new Date(`${LUNES}T${hhmm}:00-05:00`);
 
   // La líder lo ve en Asistencia
   await entrar('carolina.mendez@caminos.example');
-  await page.click('.tabs [data-view="asistencia"]');
+  await irVista(page, 'asistencia');
   await esperar();
   const filaDaniela = await page.locator('table.asis tr', { hasText: 'Daniela Castro' }).textContent();
   ok(filaDaniela.includes('Sale 15:00') && filaDaniela.includes('autorizó Carolina'), 'la líder ve en Asistencia la salida ajustada y quién autorizó');
 
   // Informe: el ejemplo sembrado de Valentina (entró y salió 1 h antes con permiso)
   await entrar('andrea.rojas@caminos.example');
-  await page.click('.tabs [data-view="informes"]');
+  await irVista(page, 'informes');
   await esperar();
   await page.selectOption('select[data-inf=rango]', 'd30');
   await esperar();

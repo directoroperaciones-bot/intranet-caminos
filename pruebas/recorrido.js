@@ -3,6 +3,13 @@
 //   node pruebas/recorrido.js [carpeta-de-capturas]
 // Cualquier error de la página (pageerror) cuenta como fallo.
 const { chromium } = require('playwright');
+async function irVista(page, v) {
+  if (!(await page.$(`header.top .subtabs [data-view="${v}"]`))) await page.click(`header.top .tabs [data-vistas~="${v}"]`);
+  const sub = `header.top .subtabs [data-view="${v}"]`;
+  if (await page.$(sub)) { await page.waitForFunction(() => !document.querySelector('.cargando')); await page.click(sub); }
+  await page.waitForFunction((v) => location.hash === '#' + v && !document.querySelector('.cargando'), v);
+}
+
 const BASE = process.env.BASE || 'http://localhost:8765/pruebas/demo.html';
 const OUT = process.argv[2] || 'capturas';
 const fs = require('fs');
@@ -26,9 +33,9 @@ async function entrar(page, correo, { primerIngreso } = {}) {
   await page.waitForSelector('header.top');
   await page.waitForSelector('.pass, .hello');
 }
-const pestañas = (page) => page.$$eval('.tabs button', (bs) => bs.map((b) => b.dataset.view));
+const pestañas = (page) => page.$$eval('header.top .tabs button', (bs) => bs.flatMap((b) => b.dataset.vistas.split(' ')));
 async function ir(page, v) {
-  await page.click(`.tabs [data-view="${v}"]`);
+  await irVista(page, v);
   await page.waitForFunction(() => !document.querySelector('.cargando'));
   await page.waitForTimeout(120);
 }
@@ -43,10 +50,10 @@ async function sinDesborde(page, etiqueta) {
 (async () => {
   const browser = await chromium.launch();
   const cuentas = [
-    { correo: 'andrea.rojas@caminos.example', clave: 'gerencia', esperadas: ['inicio', 'grupos', 'malla', 'comunicados', 'asistencia', 'informes', 'gestion', 'solicitudes', 'equipo', 'tarjeta', 'oficina'] },
-    { correo: 'carolina.mendez@caminos.example', clave: 'directora', esperadas: ['inicio', 'grupos', 'malla', 'comunicados', 'asistencia', 'informes', 'solicitudes'] },
-    { correo: 'julian.torres@caminos.example', clave: 'supervisor', esperadas: ['inicio', 'grupos', 'malla', 'comunicados', 'solicitudes', 'equipo'] },
-    { correo: 'daniela.castro@caminos.example', clave: 'colaboradora', esperadas: ['inicio', 'grupos', 'malla', 'comunicados', 'solicitudes'] },
+    { correo: 'andrea.rojas@caminos.example', clave: 'gerencia', esperadas: ['inicio', 'comunicados', 'grupos', 'viaticos', 'malla', 'asistencia', 'informes', 'solicitudes', 'gestion', 'tarjeta', 'oficina', 'equipo'] },
+    { correo: 'carolina.mendez@caminos.example', clave: 'directora', esperadas: ['inicio', 'comunicados', 'grupos', 'viaticos', 'malla', 'asistencia', 'informes', 'solicitudes'] },
+    { correo: 'julian.torres@caminos.example', clave: 'supervisor', esperadas: ['inicio', 'comunicados', 'grupos', 'viaticos', 'malla', 'solicitudes', 'equipo'] },
+    { correo: 'daniela.castro@caminos.example', clave: 'colaboradora', esperadas: ['inicio', 'comunicados', 'grupos', 'viaticos', 'malla', 'solicitudes'] },
   ];
   for (const ancho of [1300, 390]) {
     for (const c of cuentas) {

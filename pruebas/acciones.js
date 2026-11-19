@@ -2,6 +2,13 @@
 // viven en memoria, así que se cambia de cuenta saliendo y entrando).
 // Uso: servir intranet/ en :8765 y correr  node pruebas/acciones.js
 const { chromium } = require('playwright');
+async function irVista(page, v) {
+  if (!(await page.$(`header.top .subtabs [data-view="${v}"]`))) await page.click(`header.top .tabs [data-vistas~="${v}"]`);
+  const sub = `header.top .subtabs [data-view="${v}"]`;
+  if (await page.$(sub)) { await page.waitForFunction(() => !document.querySelector('.cargando')); await page.click(sub); }
+  await page.waitForFunction((v) => location.hash === '#' + v && !document.querySelector('.cargando'), v);
+}
+
 const BASE = process.env.BASE || 'http://localhost:8765/pruebas/demo.html';
 
 const fallos = [];
@@ -44,7 +51,7 @@ let page;
     await page.waitForSelector('header.top');
     await esperar();
   }
-  async function ir(v) { await page.click(`.tabs [data-view="${v}"]`); await esperar(); }
+  async function ir(v) { await irVista(page, v); await esperar(); }
 
   // ---------- Acceso ----------
   await page.goto(BASE);
@@ -726,7 +733,7 @@ let page;
   ok(await avisa('En destino'), 'grupos: una colaboradora mueve un grupo creado por otra persona');
 
   // ---------- Informes de gestión ----------
-  ok(!(await page.$('.tabs [data-view=gestion]')), 'gestión: una colaboradora no ve los informes de gestión');
+  ok(!(await page.$('header.top [data-vistas~=gestion]')), 'gestión: una colaboradora no ve los informes de gestión');
   await entrar('andrea.rojas@caminos.example');
 
   // ---------- Equipo › Clientes de la extranet ----------

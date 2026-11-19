@@ -32,6 +32,7 @@ def main():
     scripts = [leer("pruebas/supabase-simulado.js"),
                "window.INTRANET_CONFIG = { supabaseUrl: 'https://demo.local', supabaseKey: 'demo', demo: window.SUPABASE_DEMO, sinDescargas: true };",
                leer("assets/cuenta-cobro.js"),
+               leer("assets/legalizacion.js"),
                app]
     for s in scripts:
         if "</script" in s.lower():

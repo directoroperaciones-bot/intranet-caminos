@@ -484,6 +484,67 @@ tr.inactiva > * { opacity: .55; }
 .gantt-leyenda span { display: inline-flex; align-items: center; gap: 8px; }
 .gantt-punto { width: 12px; height: 12px; border-radius: 4px; background: var(--col-bg); box-shadow: inset 0 0 0 1px var(--col); }
 
+/* ---------- Menú agrupado: barra secundaria del grupo activo ---------- */
+.subtabs { border-top: 1px solid var(--hairline); background: var(--blanco); }
+.subtabs-in { display: flex; gap: 4px; overflow-x: auto; scrollbar-width: none; padding-block: 6px; }
+.subtabs-in::-webkit-scrollbar { display: none; }
+.subtabs button { flex: none; display: inline-flex; align-items: center; background: none; border: 0; padding: 7px 14px; border-radius: 999px; font: 500 14px var(--fuente); color: var(--pizarra); cursor: pointer; white-space: nowrap; }
+.subtabs button:hover { color: var(--coral); }
+.subtabs button[aria-current="page"] { color: var(--coral); background: var(--coral-5); font-weight: 600; }
+
+/* ---------- Viáticos ---------- */
+.via-acc-h { display: flex; flex-wrap: wrap; gap: 10px; }
+.via-kpis { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; margin-bottom: 18px; }
+.via-kpi { background: var(--blanco); border: 1px solid var(--hairline); border-radius: 16px; padding: 16px 18px; display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.via-kpi > span { font: 600 11px/1.3 var(--fuente); letter-spacing: .1em; text-transform: uppercase; color: var(--pizarra); }
+.via-kpi > b { font: 700 24px/1.15 var(--fuente); color: var(--carbon); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.via-kpi > small { font-size: 12px; line-height: 1.35; color: var(--pizarra); }
+.via-filtros { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; }
+.via-filtros button { display: inline-flex; align-items: center; gap: 6px; font: 500 14px var(--fuente); color: var(--texto); background: var(--blanco); border: 1px solid var(--hairline); border-radius: 999px; padding: 7px 14px; cursor: pointer; }
+.via-filtros button b { font-weight: 600; color: var(--pizarra); }
+.via-filtros button[aria-pressed="true"] { border-color: var(--coral); color: var(--coral); background: var(--coral-5); }
+.via-filtros button[aria-pressed="true"] b { color: var(--coral); }
+.via-lista { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 290px), 1fr)); gap: 14px; }
+.via-card { width: 100%; height: 100%; text-align: left; font: inherit; color: var(--texto); background: var(--blanco); border: 1px solid var(--hairline); border-radius: 18px; padding: 16px 18px; display: flex; flex-direction: column; gap: 8px; cursor: pointer; transition: border-color .15s var(--ease); }
+.via-card:hover { border-color: var(--coral-foco); }
+.via-card-h { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; }
+.via-card-h b { font-size: 17px; color: var(--carbon); line-height: 1.3; }
+.via-meta { font-size: 13px; color: var(--pizarra); }
+.via-meta b { color: var(--texto); font-weight: 600; }
+.via-monto { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 4px 10px; font-size: 14px; font-weight: 600; color: var(--carbon); margin-top: auto; }
+.via-monto small { font-weight: 500; color: var(--pizarra); font-size: 12.5px; }
+.via-form, .via-caja { margin-bottom: 18px; display: flex; flex-direction: column; gap: 14px; }
+.via-form .ancho, .via-caja .ancho { grid-column: 1 / -1; }
+.via-botones { display: flex; justify-content: flex-end; flex-wrap: wrap; gap: 10px; }
+.via-gasto-grid { display: grid; grid-template-columns: 170px 190px minmax(0, 1fr) 170px; gap: 12px 14px; }
+.via-volver { margin-bottom: 6px; }
+.via-nota { margin-bottom: 18px; }
+.page-h h1 .chip { vertical-align: middle; font-size: 13px; margin-left: 6px; }
+.via-gastos { margin-top: 6px; }
+.via-tabla td.num, .via-tabla tfoot td.num { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.via-tabla tfoot th, .via-tabla tfoot td { padding: 12px 14px; border-top: 1px solid var(--hairline); text-align: left; background: var(--tabla); }
+.via-tabla tfoot td.num { text-align: right; }
+.via-tabla a { display: inline-flex; align-items: center; gap: 4px; color: var(--coral); font-weight: 500; }
+.via-tabla .i { width: 15px; height: 15px; }
+.via-no td { color: var(--pizarra); }
+.via-no td.num { text-decoration: line-through; }
+.via-motivo { display: block; color: var(--bad); font-size: 12px; margin-top: 2px; }
+.via-acc-g { white-space: nowrap; text-align: right !important; }
+.via-noacep { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.via-noacep input { min-height: 34px; border: 1px solid var(--hairline); border-radius: 10px; padding: 4px 10px; width: 180px; }
+.via-enviar { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 14px 24px; margin-top: 18px; }
+.via-enviar p { margin-top: 2px; }
+.via-anular { margin-top: 14px; }
+@media (max-width: 900px) {
+  .via-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .via-gasto-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .via-gasto-grid .via-desc { grid-column: 1 / -1; }
+}
+@media (max-width: 520px) {
+  .via-kpi > b { font-size: 20px; }
+  .via-acc-h .btn, .via-botones .btn, .via-enviar .btn { width: 100%; }
+}
+
 /* ---------- Pantallas medianas ---------- */
 /* Con Grupos, la gerencia tiene 8 pestañas: se aprietan antes de pasar a su propia fila */
 @media (max-width: 1360px) {

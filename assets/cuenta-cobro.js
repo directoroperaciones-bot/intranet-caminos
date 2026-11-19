@@ -95,8 +95,10 @@
   }
 
   // Abre el documento listo para imprimir o guardar como PDF
-  function abrir(c) {
-    const doc = html(c);
+  function abrir(c) { return imprimir(html(c)); }
+
+  // Abre cualquier documento HTML en una ventana y lanza el diálogo de imprimir
+  function imprimir(doc) {
     const w = window.open('', '_blank');
     if (w) {
       w.document.open();
@@ -142,5 +144,5 @@
   }
   const ESTADOS = { generada: { nombre: 'Generada', cls: 'info' }, enviada: { nombre: 'Enviada', cls: 'warn' }, pagada: { nombre: 'Pagada', cls: 'ok' }, anulada: { nombre: 'Anulada', cls: 'mute' } };
 
-  window.CuentaCobro = { html, abrir, elegibles, faltantes, periodo, ESTADOS };
+  window.CuentaCobro = { html, abrir, imprimir, elegibles, faltantes, periodo, ESTADOS };
 })();

@@ -19,3 +19,4 @@ correr supabase/pruebas/06_informes_gestion.sql
 correr supabase/pruebas/07_extranet.sql
 correr supabase/pruebas/08_cuentas_cobro.sql
 correr supabase/pruebas/09_ajustes_jornada.sql
+correr supabase/pruebas/10_viaticos.sql

@@ -2,7 +2,7 @@
 
 Intranet del equipo de Caminos, construida con el *Manual técnico · Intranet corporativa (versión final)* y con el sistema de diseño de Caminos (el mismo de Caminos Documentos: coral `#F25061`, Poppins, logo con la estrella, fondo hueso, botones con radio 10).
 
-**Qué trae:** acceso con correo corporativo y contraseña, **grupos de viaje** (tablero de cinco columnas, línea de tiempo y calendario compartido de Google), pase de jornada para marcar asistencia, malla de horarios (horario fijo + cambios puntuales + turnos), comunicados con confirmación de lectura, asistencia del día, informe de asistencia de gerencia por rango de fechas (mes, trimestre, año, últimos días o fechas libres) con exportación a Excel del resumen y del detalle por día, solicitudes de vacaciones, permisos e incapacidades, administración de cuentas y una guía de uso según el rol.
+**Qué trae:** acceso con correo corporativo y contraseña, **grupos de viaje** (tablero de cinco columnas, línea de tiempo y calendario compartido de Google), pase de jornada para marcar asistencia, malla de horarios (horario fijo + cambios puntuales + turnos), comunicados con confirmación de lectura, asistencia del día, informe de asistencia de gerencia por rango de fechas (mes, trimestre, año, últimos días o fechas libres) con exportación a Excel del resumen y del detalle por día, solicitudes de vacaciones, permisos e incapacidades, **viáticos y legalización de gastos de viaje** (solicitud, presupuesto y aprobación de gerencia, gastos con soporte, revisión y saldo), menú agrupado (Inicio · Comunicados · Viajes · Personal · Administración), administración de cuentas y una guía de uso según el rol.
 
 **Accesos a las herramientas (tarjetas en Inicio):**
 
@@ -59,6 +59,7 @@ intranet/
     ├── recorrido.js          ← cada rol, cada pestaña, escritorio y celular
     ├── acciones.js           ← marcar, publicar, aprobar, malla, cuentas, informes
     ├── jornada.js            ← entrada temprana autorizada y medición de la salida
+    ├── viaticos.js           ← viáticos y legalización de gastos de viaje
     └── armar_vista_previa.py
 ```
 
@@ -90,11 +91,13 @@ Como Caminos es un cliente nuevo, se fusionaron las del manual (el manual lo per
 | `020_cuentas_cobro.sql` | Propia: cuentas de cobro de aliados (plantilla CUENTA_COBRO_ALIADO). `generar_cuenta_cobro` exige ventas facturadas, con número de factura, en modalidad Retorno, facturadas en el periodo y no cobradas antes. `estado_cuenta_cobro`: enviada, pagada o anulada; anular libera las ventas |
 | `021_ajustes_jornada.sql` | Propia: entrada temprana autorizada. Si alguien marca la entrada 30 min o más antes de su turno, `ajustar_jornada` guarda el motivo, la nueva hora de salida (o que no cambia) y quién lo autorizó (gerencia, dirección o supervisión). El informe mide la salida contra esa hora. Agrega a `tolerancias` `salida_min` (5) y `temprano_min` (30) sin tocar las existentes |
 | `022_solo_gerente.sql` | Propia: solo el rol «gerente» es gerencia (`es_gerencia`, `lidera_sede`). La marca de administración ya no da acceso a Gestión, Tarjeta, Oficina ni a todas las sedes; solo sirve para administrar cuentas, sedes y áreas |
+| `023_viaticos.sql` | Propia: viáticos y legalización de gastos de viaje. Tablas `viaticos` y `viatico_gastos`, carpeta privada `viaticos` para los soportes. Flujo con funciones: `solicitar_viatico`, `asignar_viatico`, `aprobar_viatico`, `rechazar_viatico`, `enviar_legalizacion`, `no_aceptar_gasto`, `revisar_legalizacion` (cierra con el saldo) y `anular_viatico`. Cada quien ve los suyos; la gerencia, todos; nadie se aprueba a sí mismo |
 
 ## 3. Pruebas hechas
 
-- **Permisos en Postgres** (`supabase/pruebas/correr.sh`): 344 reglas en verde (con las 5 de «solo el gerente ve todo», las 18 de la entrada temprana autorizada, las 23 de las cuentas de cobro, con las 44 de los informes de gestión y su botón, las 33 de la extranet de clientes, con las 28 de grupos (con la parroquia) y la clave del calendario, las 20 de marcar solo desde la oficina y las 32 de la conciliación de la tarjeta). Marcas solo con `marcar()`, orden de los pasos, bloqueo por IP, malla por sede, supervisor sin poderes de gerencia, comunicados por destinatario, solicitudes por revisor, ausencias aprobadas, `anon` sin acceso.
+- **Permisos en Postgres** (`supabase/pruebas/correr.sh`): 388 reglas en verde (con las 44 de viáticos y legalización, las 5 de «solo el gerente ve todo», las 18 de la entrada temprana autorizada, las 23 de las cuentas de cobro, con las 44 de los informes de gestión y su botón, las 33 de la extranet de clientes, con las 28 de grupos (con la parroquia) y la clave del calendario, las 20 de marcar solo desde la oficina y las 32 de la conciliación de la tarjeta). Marcas solo con `marcar()`, orden de los pasos, bloqueo por IP, malla por sede, supervisor sin poderes de gerencia, comunicados por destinatario, solicitudes por revisor, ausencias aprobadas, `anon` sin acceso.
 - **Interfaz** (`pruebas/recorrido.js`): 4 roles × 2 anchos (1300 px y 390 px), cada pestaña (Grupos en tablero y línea de tiempo) sin desborde horizontal y sin errores de página.
+- **Viáticos** (`pruebas/viaticos.js`): 37 verificaciones (menú agrupado, solicitar, registrar gastos con soporte, enviar, aprobar, rechazar, no aceptar un gasto, devolver, saldo, formato imprimible, asignar y celular).
 - **Jornada** (`pruebas/jornada.js`): 25 verificaciones con el reloj fijo (ventana de entrada temprana, salida ajustada, tiempo adicional, vista de la líder e informe).
 - **Acciones** (`pruebas/acciones.js`): 221 verificaciones (incluye el informe de asistencia por rango de fechas y su detalle por día, los filtros cruzados del tablero de gestión, recuperar contraseña, la pestaña Oficina, los gastos y la conciliación de la tarjeta y crear, mover, arrastrar, editar y borrar grupos), entre ellas que el informe cuadra con un cálculo manual independiente y que el CSV sale con BOM, `;` y `\r\n`.
 
