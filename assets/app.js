@@ -195,7 +195,8 @@
   const ROLES = { colaborador: 'Colaborador', supervisor: 'Supervisor', directora: 'Dirección de operaciones', gerente: 'Gerente' };
   const tol = () => {
     const t = S.config.tolerancias || {};
-    return { entrada: t.entrada_min == null ? 5 : +t.entrada_min, almuerzo: t.almuerzo_min == null ? 5 : +t.almuerzo_min };
+    const n = (v, d) => (v == null ? d : +v);
+    return { entrada: n(t.entrada_min, 5), almuerzo: n(t.almuerzo_min, 5), salida: n(t.salida_min, 5), temprano: n(t.temprano_min, 30) };
   };
   const meta = () => { const m = S.config.meta_puntualidad || {}; return m.porcentaje == null ? 95 : +m.porcentaje; };
 
@@ -593,7 +594,7 @@
       </div></header>
       <main class="wrap page" id="contenido">${S.cargandoVista ? cargandoBloque() : S.errorVista ? errorVistaView() : vistaActual()}</main>
       <footer class="foot-site"><div class="wrap"><span><b>${esc(MARCA.nombre)}</b> — ${esc(MARCA.lema)}</span><span>${pie}</span></div></footer>
-      ${S.lb ? lightboxView() : ''}`;
+      ${S.lb ? lightboxView() : ''}${S.ajuste ? ajusteView() : ''}`;
   }
 
   function menuPop() {
@@ -632,14 +633,15 @@
   // ---------- Inicio ----------
   async function cargarInicio() {
     const tz = miTz(), hoy = fechaEn(tz), lunes = lunesDe(hoy), domingo = sumarDias(lunes, 6), yo = P().id;
-    const [semana, marcas, ausencias, misSol] = await Promise.all([
+    const [semana, marcas, ausencias, misSol, ajustes] = await Promise.all([
       q(sb.rpc('malla_efectiva', { p_desde: lunes, p_hasta: domingo }).eq('persona_id', yo)),
       q(sb.from('marcas').select('*').eq('persona_id', yo).eq('fecha', hoy)),
       q(sb.rpc('ausencias_aprobadas', { p_desde: lunes, p_hasta: domingo })),
       q(sb.from('solicitudes').select('*').eq('persona_id', yo).order('creado', { ascending: false }).limit(30)),
+      q(sb.from('ajustes_jornada').select('*').eq('persona_id', yo).eq('fecha', hoy)).catch(() => []), // si aún no existe la tabla, sigue
       cargarComunicados(),
     ]);
-    S.hoy = { fecha: hoy, lunes, semana: semana || [], marcas: marcas || [], ausencias: (ausencias || []).filter((a) => a.persona_id === yo), misSol: misSol || [] };
+    S.hoy = { fecha: hoy, lunes, semana: semana || [], marcas: marcas || [], ausencias: (ausencias || []).filter((a) => a.persona_id === yo), misSol: misSol || [], ajuste: (ajustes || [])[0] || null };
   }
 
   const saludo = () => { const h = ahoraMin(miTz()) / 60; return h < 12 ? 'Buenos días' : h < 19 ? 'Buenas tardes' : 'Buenas noches'; };
@@ -677,24 +679,29 @@
     { tipo: 'salida', cod: 'SAL', nombre: 'Salida', boton: 'Marcar salida' },
   ];
 
-  // Evalúa un paso contra el turno: hora programada, hora real y etiqueta.
-  function evaluar(tipo, t, marcas, tz) {
+  // Hora de salida que se espera: la del ajuste autorizado si lo hay, si no la del turno.
+  const salidaEsperada = (t, aj) => (aj && aj.salida ? toMin(aj.salida) : t && t.salida ? toMin(t.salida) : null);
+  // Minutos que entró antes de su turno (0 si no entró antes).
+  const minAntesEntrada = (t, marcas, tz) => (t && t.entrada && marcas.entrada ? Math.max(0, toMin(t.entrada) - minDe(marcas.entrada.hora, tz)) : 0);
+
+  // Evalúa un paso contra el turno: hora programada, hora real y etiqueta. aj = ajuste autorizado del día.
+  function evaluar(tipo, t, marcas, tz, aj) {
     const m = marcas[tipo];
     const campo = { entrada: 'entrada', salida_almuerzo: 'salida_almuerzo', regreso_almuerzo: 'regreso_almuerzo', salida: 'salida' }[tipo];
-    const prog = t && t[campo] ? toMin(t[campo]) : null;
+    const prog = tipo === 'salida' ? salidaEsperada(t, aj) : t && t[campo] ? toMin(t[campo]) : null;
     const real = m ? minDe(m.hora, tz) : null;
     let chip = null;
     if (m && t && conHorario(t)) {
       if (tipo === 'entrada') {
         const d = real - prog;
-        chip = d > tol().entrada ? { txt: `Tarde ${d} min`, cls: 'bad', alerta: true } : { txt: 'A tiempo', cls: 'ok' };
+        chip = d > tol().entrada ? { txt: `Tarde ${d} min`, cls: 'bad', alerta: true } : -d >= tol().temprano ? { txt: `${-d} min antes`, cls: aj ? 'info' : 'warn' } : { txt: 'A tiempo', cls: 'ok' };
       } else if (tipo === 'regreso_almuerzo' && marcas.salida_almuerzo) {
         const dur = real - minDe(marcas.salida_almuerzo.hora, tz);
         const permitido = conAlmuerzo(t) ? toMin(t.regreso_almuerzo) - toMin(t.salida_almuerzo) : 60;
         chip = dur > permitido + tol().almuerzo ? { txt: `Almuerzo ${dur} min`, cls: 'warn', alerta: true } : { txt: `Almuerzo ${dur} min`, cls: 'ok' };
       } else if (tipo === 'salida') {
         const d = real - prog;
-        chip = d < 0 ? { txt: `Salió ${-d} min antes`, cls: 'warn', alerta: true } : d >= 30 ? { txt: `${d} min extra`, cls: 'info' } : { txt: 'A tiempo', cls: 'ok' };
+        chip = d < 0 ? { txt: `Salió ${-d} min antes`, cls: 'warn', alerta: true } : d > tol().salida ? { txt: `+${d} min adicionales`, cls: 'info' } : { txt: 'A tiempo', cls: 'ok' };
       }
     }
     return { prog, real, chip };
@@ -714,6 +721,7 @@
     const t = fila ? turno(fila.turno_id) : null;
     const marcas = {};
     h.marcas.forEach((m) => { marcas[m.tipo] = m; });
+    const aj = h.ajuste;
     const aus = ausenciaHoy();
     const sinAlm = t && conHorario(t) && !conAlmuerzo(t);
     const pasos = PASOS.filter((x) => !(sinAlm && (x.tipo === 'salida_almuerzo' || x.tipo === 'regreso_almuerzo')));
@@ -734,9 +742,17 @@
       aviso = `<div class="notice warn">${ico('alerta')}<div><b>No tienes turno asignado hoy.</b><p>Puedes marcar igual; la líder de tu sede lo revisará.</p></div></div>`;
     }
     const mostrarBoton = !aus && !descanso;
+    // Entrada temprana: pide (o muestra) la autorización para no afectar el informe
+    const antes = conHorario(t) ? minAntesEntrada(t, marcas, tz) : 0;
+    let avisoAjuste = '';
+    if (aj) {
+      avisoAjuste = `<div class="notice info">${ico('check')}<div><b>Horario ajustado hoy.</b><p>${aj.salida ? `Tu salida es a las ${esc(hhmm(aj.salida))}` : 'Sales a la hora de siempre'} · autorizó ${esc(nombreDe(aj.autorizo))} · «${esc(aj.motivo)}».</p>${marcas.salida ? '' : '<button type="button" class="btn txt sm" data-accion="abrirAjuste">Cambiar</button>'}</div></div>`;
+    } else if (antes >= tol().temprano && !marcas.salida) {
+      avisoAjuste = `<div class="notice warn">${ico('alerta')}<div><b>Entraste ${antes} min antes de tu turno.</b><p>Si te autorizaron a entrar y salir más temprano, regístralo para que tu salida no cuente como «salida antes».</p><button type="button" class="btn sm" data-accion="abrirAjuste">Registrar autorización</button></div></div>`;
+    }
 
     const legs = pasos.map((x) => {
-      const ev = evaluar(x.tipo, t, marcas, tz);
+      const ev = evaluar(x.tipo, t, marcas, tz, aj);
       const estado = marcas[x.tipo] ? 'done' : sig && sig.tipo === x.tipo && mostrarBoton ? 'next' : '';
       return `<li class="leg ${estado}">
           <span class="dot">${marcas[x.tipo] ? ico('check') : ''}</span>
@@ -765,7 +781,7 @@
           <div class="stub-top"><span class="eyebrow">Pase de jornada</span><span>${esc(fechaCorta(h.fecha))}</span></div>
           <div class="stub-name">${esc(p.nombre)}</div>
           ${t && conHorario(t)
-            ? `<div class="route"><div><small>Entrada</small><b>${hhmm(t.entrada)}</b></div><span class="route-line">${ico('avion')}</span><div><small>Salida</small><b>${hhmm(t.salida)}</b></div></div>`
+            ? `<div class="route"><div><small>Entrada</small><b>${hhmm(t.entrada)}</b></div><span class="route-line">${ico('avion')}</span><div><small>Salida${aj && aj.salida ? ' · ajustada' : ''}</small><b>${hm(salidaEsperada(t, aj))}</b></div></div>`
             : `<div class="route vacia"><b>${t ? esc(t.nombre) : 'Sin turno'}</b></div>`}
           <dl class="stub-dl">
             <div><dt>Turno</dt><dd>${t ? esc(t.nombre) : '—'}</dd></div>
@@ -775,7 +791,7 @@
           <div class="clock"><small>Hora en ${esc(sede ? sede.nombre : 'la sede')}</small><span id="clock">${segEn(tz)}</span></div>
         </div>
         <div class="pass-body">
-          ${aviso}
+          ${aviso}${avisoAjuste}
           <ol class="legs">${cabLegs}${legs}</ol>
           <div class="pass-acc">${boton}</div>
         </div>
@@ -1122,21 +1138,26 @@
   }
 
   // ---------- Asistencia del día (líderes y gerencia) ----------
+  // Ajustes de horario autorizados (entrada temprana). Si la tabla aún no existe, sigue sin ellos.
+  const cargarAjustes = (desde, hasta) => todas(() => sb.from('ajustes_jornada').select('*').gte('fecha', desde).lte('fecha', hasta).order('fecha').order('persona_id')).catch(() => []);
+  const ajusteDe = (lista, pid, fecha) => (lista || []).find((a) => a.persona_id === pid && a.fecha === fecha) || null;
+
   async function cargarAsistencia() {
     const sedes = S.sedes.filter((s) => lideraSede(s.id));
     const fechas = [...new Set(sedes.map((s) => fechaEn(s.zona_horaria)))].sort();
-    if (!fechas.length) { S.asistencia = { malla: [], marcas: [], ausencias: [], hora: new Date() }; return; }
+    if (!fechas.length) { S.asistencia = { malla: [], marcas: [], ausencias: [], ajustes: [], hora: new Date() }; return; }
     const desde = fechas[0], hasta = fechas[fechas.length - 1];
-    const [malla, marcas, ausencias] = await Promise.all([
+    const [malla, marcas, ausencias, ajustes] = await Promise.all([
       mallaEfectiva(desde, hasta),
       todas(() => sb.from('marcas').select('*').gte('fecha', desde).lte('fecha', hasta).order('id')),
       q(sb.rpc('ausencias_aprobadas', { p_desde: desde, p_hasta: hasta })),
+      cargarAjustes(desde, hasta),
     ]);
-    S.asistencia = { malla, marcas, ausencias, hora: new Date() };
+    S.asistencia = { malla, marcas, ausencias, ajustes, hora: new Date() };
   }
 
   // Estado de una persona hoy, en este orden: ausencia, descanso, sin entrada, con marcas.
-  function estadoPersona(p, t, marcas, aus, tz) {
+  function estadoPersona(p, t, marcas, aus, tz, aj) {
     if (aus) return { txt: TIPOS[aus.tipo].estado, cls: 'info', kpi: 'descanso' };
     if (t && !conHorario(t)) return { txt: t.nombre, cls: 'mute', kpi: 'descanso' };
     const ahora = ahoraMin(tz);
@@ -1147,7 +1168,7 @@
       if (ahora > ent + 15) return { txt: 'Sin marcar entrada', cls: 'bad', kpi: 'sinmarcar' };
       return { txt: 'Por llegar', cls: 'warn', kpi: 'descanso' };
     }
-    const alerta = PASOS.some((x) => { const ev = evaluar(x.tipo, t, marcas, tz); return ev.chip && ev.chip.alerta; });
+    const alerta = PASOS.some((x) => { const ev = evaluar(x.tipo, t, marcas, tz, aj); return ev.chip && ev.chip.alerta; });
     return alerta ? { txt: 'Con novedad', cls: 'warn', kpi: 'novedad' } : { txt: 'Al día', cls: 'ok', kpi: 'aldia' };
   }
 
@@ -1164,14 +1185,16 @@
       const marcas = {};
       A.marcas.filter((m) => m.persona_id === p.id && m.fecha === hoy).forEach((m) => { marcas[m.tipo] = m; });
       const aus = A.ausencias.find((a) => a.persona_id === p.id && a.desde <= hoy && a.hasta >= hoy);
-      const st = estadoPersona(p, t, marcas, aus, tz);
+      const aj = ajusteDe(A.ajustes, p.id, hoy);
+      const st = estadoPersona(p, t, marcas, aus, tz, aj);
       cuenta[st.kpi]++;
       const celdas = PASOS.map((x) => {
-        const ev = evaluar(x.tipo, t, marcas, tz);
+        const ev = evaluar(x.tipo, t, marcas, tz, aj);
         if (ev.real != null) return `<td class="num"><b>${hm(ev.real)}</b>${ev.chip && ev.chip.alerta ? `<span class="chip ${ev.chip.cls} xs">${esc(ev.chip.txt)}</span>` : ''}</td>`;
         return `<td class="num prog">${ev.prog != null && !(x.tipo.includes('almuerzo') && !conAlmuerzo(t)) ? hm(ev.prog) : '—'}</td>`;
       }).join('');
-      return `<tr>${personaTd(p)}<td><span class="chipt ${colorTurno(t)}" title="${esc(t ? turnoEtq(t) : '')}">${esc(t ? chipTxt(t) : '—')}</span></td>${celdas}<td><span class="chip ${st.cls}">${esc(st.txt)}</span></td></tr>`;
+      const chipAj = aj ? `<span class="chip info xs" title="${esc(`${aj.motivo} · autorizó ${nombreDe(aj.autorizo)}`)}">${aj.salida ? `Sale ${esc(hhmm(aj.salida))}` : 'Entrada temprana'} · autorizó ${esc(primerNombre(nombreDe(aj.autorizo)))}</span>` : '';
+      return `<tr>${personaTd(p)}<td><span class="chipt ${colorTurno(t)}" title="${esc(t ? turnoEtq(t) : '')}">${esc(t ? chipTxt(t) : '—')}</span></td>${celdas}<td><span class="chip ${st.cls}">${esc(st.txt)}</span>${chipAj}</td></tr>`;
     }).join('')).join('');
     const kpi = (n, txt, cls) => `<div class="kpi ${cls}"><b>${n}</b><span>${txt}</span></div>`;
     return encabezado('Hoy', '¿Quién está <em>trabajando hoy?</em>', `Comparado con la malla. Actualizado a las ${esc(horaDe(A.hora, miTz()))}.`,
@@ -1402,6 +1425,54 @@
       await cargarComunicados();
       toast(fallas ? `Comunicado publicado, pero ${plural(fallas, 'imagen no se pudo', 'imágenes no se pudieron')} subir.` : 'Comunicado publicado.', fallas ? 'warn' : 'ok');
     });
+  }
+
+  // ---------- Entrada temprana autorizada ----------
+  const autorizadores = () => S.personas.filter((p) => p.activo && p.id !== P().id && (['gerente', 'directora', 'supervisor'].includes(p.rol) || p.es_admin))
+    .sort((a, b) => a.nombre.localeCompare(b.nombre, 'es'));
+  function turnoHoy() {
+    const h = S.hoy, fila = h && h.semana.find((x) => x.fecha === h.fecha);
+    return fila ? turno(fila.turno_id) : null;
+  }
+  function abrirAjuste() {
+    const h = S.hoy, aj = h && h.ajuste, t = turnoHoy();
+    if (!t || !conHorario(t)) return;
+    const marcas = {};
+    h.marcas.forEach((m) => { marcas[m.tipo] = m; });
+    const antes = minAntesEntrada(t, marcas, miTz());
+    const corrida = toMin(t.salida) - antes;
+    let opcion = 'corre', salida = hm(corrida).padStart(5, '0');
+    if (aj) {
+      if (!aj.salida) opcion = 'igual';
+      else if (toMin(aj.salida) !== corrida) { opcion = 'otra'; salida = hhmm(aj.salida).padStart(5, '0'); }
+    }
+    S.ajuste = { antes, corrida, opcion, salida, motivo: aj ? aj.motivo : '', autorizo: aj ? aj.autorizo : '' };
+    render();
+    const c = document.querySelector('.modal textarea');
+    if (c) c.focus();
+  }
+  function ajusteView() {
+    const A = S.ajuste, t = turnoHoy();
+    if (!t) return '';
+    const op = (v, txt) => `<label class="aj-op"><input type="radio" name="opcion" value="${v}" data-aj="opcion"${A.opcion === v ? ' checked' : ''}><span>${txt}</span></label>`;
+    return `<div class="modal" role="dialog" aria-modal="true" aria-labelledby="aj-t">
+        <form class="modal-caja" data-form="ajuste">
+          <span class="eyebrow">Entrada temprana</span>
+          <h2 id="aj-t">Entraste ${A.antes} min antes de tu turno</h2>
+          <p class="hint">Si te dieron permiso, regístralo: así tu salida no cuenta como «salida antes» en el informe. Queda a la vista de tu líder y de quien autorizó.</p>
+          <label class="field"><span>¿Por qué entraste más temprano?</span><textarea name="motivo" rows="2" maxlength="300" required data-aj="motivo" placeholder="Ej.: inventario, salida de un grupo, permiso para salir temprano">${esc(A.motivo)}</textarea></label>
+          <fieldset class="aj-ops"><legend>¿Cambia tu hora de salida?</legend>
+            ${op('corre', `Sí, salgo ${A.antes} min más temprano: a las <b>${hm(A.corrida)}</b>`)}
+            ${op('otra', `Sí, a otra hora: <input type="time" name="salida" value="${esc(A.salida)}" data-aj="salida" aria-label="Nueva hora de salida">`)}
+            ${op('igual', `No, salgo a la hora de siempre (${hhmm(t.salida)})`)}
+          </fieldset>
+          <label class="field"><span>¿Quién lo autorizó?</span><select name="autorizo" required data-aj="autorizo"><option value="">Elige una persona</option>${autorizadores().map((p) => `<option value="${p.id}"${A.autorizo === p.id ? ' selected' : ''}>${esc(p.nombre)} · ${esc(ROLES[p.rol] || '')}</option>`).join('')}</select></label>
+          <div class="modal-acc">
+            <button type="button" class="btn ghost" data-accion="cerrarAjuste">Ahora no</button>
+            <button type="submit" class="btn"${ocupado('ajuste')}>${S.ocupado === 'ajuste' ? 'Guardando…' : 'Guardar'}</button>
+          </div>
+        </form>
+      </div>`;
   }
 
   function lightboxView() {
@@ -1636,16 +1707,17 @@
     }
     if (P().rol === 'directora' && !esGerencia()) I.sede = P().sede_id;
     const { desde, hasta } = I;
-    const [malla, marcas, ausencias, coms] = await Promise.all([
+    const [malla, marcas, ausencias, ajustes, coms] = await Promise.all([
       mallaEfectiva(desde, hasta),
       todas(() => sb.from('marcas').select('*').gte('fecha', desde).lte('fecha', hasta).order('id')),
       q(sb.rpc('ausencias_aprobadas', { p_desde: desde, p_hasta: hasta })),
+      cargarAjustes(desde, hasta),
       q(sb.from('comunicados').select('*').gte('creado', sumarDias(desde, -1) + 'T00:00:00').lte('creado', sumarDias(hasta, 2) + 'T00:00:00').order('creado')),
     ]);
     const enRango = coms.filter((c) => { const f = fechaEn(miTz(), new Date(c.creado)); return f >= desde && f <= hasta; });
     const lect = enRango.length ? await todas(() => sb.from('comunicado_lecturas').select('*').in('comunicado_id', enRango.map((c) => c.id)).order('comunicado_id')) : [];
     if (S.inf !== I || I.desde !== desde || I.hasta !== hasta) return; // llegó tarde: ya se pidió otro periodo
-    I.datos = { desde, hasta, malla, marcas, ausencias, coms: enRango, lect };
+    I.datos = { desde, hasta, malla, marcas, ausencias, ajustes, coms: enRango, lect };
   }
 
   function calcularInforme() {
@@ -1658,12 +1730,14 @@
     const porDia = {};
     const filas = personas.map((p) => {
       const tz = tzSede(p.sede_id), hoy = fechaEn(tz);
-      const r = { p, jornadas: 0, tardes: 0, minTarde: 0, almLargos: 0, salidasAntes: 0, extraMin: 0, sinMarcar: 0, conPermiso: 0, comSin: 0, dias: [], registro: [] };
+      const r = { p, jornadas: 0, tardes: 0, minTarde: 0, almLargos: 0, salidasAntes: 0, minAntes: 0, extraMin: 0, diasExtra: 0, ajustes: 0, sinMarcar: 0, conPermiso: 0, comSin: 0, dias: [], registro: [] };
       D.malla.filter((f) => f.persona_id === p.id && f.fecha < hoy).forEach((f) => {
         const t = turno(f.turno_id);
         if (!conHorario(t)) return;
         // Una línea por jornada para el detalle exportable
-        const reg = { fecha: f.fecha, turno: t.nombre, entProg: hhmm(t.entrada), ent: '', tarde: 0, alm: '', salProg: hhmm(t.salida), sal: '', difSal: '', novedad: [] };
+        const aj = ajusteDe(D.ajustes, p.id, f.fecha);
+        const esperada = salidaEsperada(t, aj);
+        const reg = { fecha: f.fecha, turno: t.nombre, entProg: hhmm(t.entrada), ent: '', tarde: 0, alm: '', salProg: hm(esperada), sal: '', difSal: '', adicional: '', ajuste: '', novedad: [] };
         r.registro.push(reg);
         const aus = D.ausencias.find((a) => a.persona_id === p.id && a.desde <= f.fecha && a.hasta >= f.fecha);
         if (aus) { r.conPermiso++; r.dias.push({ fecha: f.fecha, txt: TIPOS[aus.tipo].estado, cls: 'info' }); reg.novedad.push(TIPOS[aus.tipo].estado); return; }
@@ -1673,6 +1747,12 @@
         r.jornadas++;
         reg.ent = horaDe(ent.hora, tz);
         const tarde = minDe(ent.hora, tz) - toMin(t.entrada);
+        if (aj) {
+          r.ajustes++;
+          reg.ajuste = `${aj.salida ? `Salida a las ${hhmm(aj.salida)}` : 'Misma salida'} · ${aj.motivo} · autorizó ${nombreDe(aj.autorizo)}`;
+          r.dias.push({ fecha: f.fecha, txt: aj.salida ? `Salida ajustada a ${hhmm(aj.salida)}` : 'Entrada temprana autorizada', cls: 'info' });
+        }
+        if (-tarde >= tl.temprano) reg.novedad.push(`Entró ${-tarde} min antes${aj ? ' (autorizado)' : ''}`);
         if (tarde > tl.entrada) {
           r.tardes++; r.minTarde += tarde; reg.tarde = tarde; reg.novedad.push(`Tarde ${tarde} min`);
           r.dias.push({ fecha: f.fecha, txt: `Tarde ${tarde} min`, cls: 'bad' });
@@ -1684,12 +1764,13 @@
           reg.alm = dur;
           if (dur > toMin(t.regreso_almuerzo) - toMin(t.salida_almuerzo) + tl.almuerzo) { r.almLargos++; r.dias.push({ fecha: f.fecha, txt: `Almuerzo ${dur} min`, cls: 'warn' }); reg.novedad.push(`Almuerzo ${dur} min`); }
         }
+        // La salida se mide igual que la entrada, contra la hora esperada (la del ajuste autorizado si lo hay)
         const sal = m('salida');
         if (sal) {
-          const d = minDe(sal.hora, tz) - toMin(t.salida);
+          const d = minDe(sal.hora, tz) - esperada;
           reg.sal = horaDe(sal.hora, tz); reg.difSal = d;
-          if (d < 0) { r.salidasAntes++; r.dias.push({ fecha: f.fecha, txt: `Salió ${-d} min antes`, cls: 'warn' }); reg.novedad.push(`Salió ${-d} min antes`); }
-          if (d >= 30) { r.extraMin += d; r.dias.push({ fecha: f.fecha, txt: `${d} min extra`, cls: 'info' }); reg.novedad.push(`${d} min extra`); }
+          if (d < 0) { r.salidasAntes++; r.minAntes += -d; r.dias.push({ fecha: f.fecha, txt: `Salió ${-d} min antes`, cls: 'warn' }); reg.novedad.push(`Salió ${-d} min antes`); }
+          if (d > tl.salida) { r.extraMin += d; r.diasExtra++; reg.adicional = d; r.dias.push({ fecha: f.fecha, txt: `Se quedó ${d} min más`, cls: 'info' }); reg.novedad.push(`Se quedó ${d} min más`); }
         } else reg.novedad.push('Sin marcar salida');
       });
       r.comSin = D.coms.filter((c) => c.requiere_confirmacion && destinatarios(c).some((x) => x.id === p.id) && !D.lect.some((l) => l.comunicado_id === c.id && l.persona_id === p.id)).length;
@@ -1698,9 +1779,9 @@
       return r;
     }).filter((r) => r.jornadas || r.sinMarcar || r.conPermiso);
     const tot = filas.reduce((a, r) => {
-      ['jornadas', 'tardes', 'minTarde', 'almLargos', 'salidasAntes', 'extraMin', 'sinMarcar', 'conPermiso'].forEach((k) => { a[k] += r[k]; });
+      ['jornadas', 'tardes', 'minTarde', 'almLargos', 'salidasAntes', 'minAntes', 'extraMin', 'diasExtra', 'ajustes', 'sinMarcar', 'conPermiso'].forEach((k) => { a[k] += r[k]; });
       return a;
-    }, { jornadas: 0, tardes: 0, minTarde: 0, almLargos: 0, salidasAntes: 0, extraMin: 0, sinMarcar: 0, conPermiso: 0 });
+    }, { jornadas: 0, tardes: 0, minTarde: 0, almLargos: 0, salidasAntes: 0, minAntes: 0, extraMin: 0, diasExtra: 0, ajustes: 0, sinMarcar: 0, conPermiso: 0 });
     tot.puntualidad = tot.jornadas ? ((tot.jornadas - tot.tardes) / tot.jornadas) * 100 : null;
     return { filas, tot, porDia };
   }
@@ -1786,7 +1867,7 @@
     const hoyInf = fechaEn(miTz());
     const enCurso = I.hasta >= hoyInf ? ` Periodo en curso: cuenta hasta ayer (${esc(fechaCorta(sumarDias(hoyInf, -1)))}).` : '';
     const titulo = /^(\d|año)/.test(etiquetaRango(I.desde, I.hasta)) ? `Informe del <em>${esc(etiquetaRango(I.desde, I.hasta))}</em>` : `Informe de <em>${esc(etiquetaRango(I.desde, I.hasta))}</em>`;
-    const cab = encabezado('Panel de gerencia', titulo, `${plural(nDias, 'día', 'días')} (${esc(fechaCorta(I.desde))} – ${esc(fechaCorta(I.hasta))}). Solo cuentan días cerrados con turno con horario.${enCurso} Tolerancias: ${tol().entrada} min en la entrada y ${tol().almuerzo} min en el almuerzo.`, filtros);
+    const cab = encabezado('Panel de gerencia', titulo, `${plural(nDias, 'día', 'días')} (${esc(fechaCorta(I.desde))} – ${esc(fechaCorta(I.hasta))}). Solo cuentan días cerrados con turno con horario.${enCurso} Tolerancias: ${tol().entrada} min en la entrada, ${tol().almuerzo} en el almuerzo y ${tol().salida} en la salida (después de eso cuenta como tiempo adicional).`, filtros);
     if (!filas.length) return cab + `<p class="vacio card">No hay jornadas cerradas para estos filtros.</p>`;
     const nivel = tot.puntualidad == null ? 'mute' : tot.puntualidad >= m ? 'ok' : tot.puntualidad >= m - 10 ? 'warn' : 'bad';
     const k = (n, txt, sub) => `<div class="kpi"><b>${n}</b><span>${txt}</span>${sub ? `<small>${sub}</small>` : ''}</div>`;
@@ -1796,10 +1877,10 @@
           <small>Meta ${m} % · ${plural(tot.jornadas, 'jornada', 'jornadas')}</small></div>
         ${k(tot.tardes, 'Llegadas tarde', `${tot.minTarde} min en total`)}
         ${k(tot.almLargos, 'Almuerzos largos')}
-        ${k(tot.salidasAntes, 'Salidas antes')}
+        ${k(tot.salidasAntes, 'Salidas antes', `${tot.minAntes} min en total`)}
         ${k(tot.sinMarcar, 'Jornadas sin marcar')}
         ${k(tot.conPermiso, 'Ausencias con permiso')}
-        ${k(hm(tot.extraMin), 'Horas extra', 'salidas de 30 min o más')}
+        ${k(hm(tot.extraMin), 'Tiempo adicional', `${plural(tot.diasExtra, 'jornada', 'jornadas')} · después de la salida`)}
       </div>`;
     const rank = filas.filter((r) => r.minTarde > 0).sort((a, b) => b.minTarde - a.minTarde).slice(0, 8);
     const maxR = rank.length ? rank[0].minTarde : 1;
@@ -1807,10 +1888,10 @@
     const ranking = `<section class="card"><div class="sec-h"><h2>¿Quién llegó más tarde?</h2></div>
         ${rank.length ? `<ol class="rank">${rank.map((r) => `<li><button type="button" data-selinf="${r.p.id}" aria-pressed="${I.sel === r.p.id}"><span class="rank-n">${esc(r.p.nombre)}</span><span class="rank-bar"><span style="width:${(r.minTarde / maxR) * 100}%"></span></span><span class="rank-v">${r.minTarde} min · ${r.tardes}×</span></button></li>`).join('')}</ol>` : '<p class="vacio">Nadie llegó tarde en este periodo.</p>'}
         ${sel ? `<div class="detail"><div class="sec-h"><h3>${esc(sel.p.nombre)}</h3><button type="button" class="btn txt sm" data-selinf="">${ico('x')}Cerrar</button></div>
-            <p class="hint">${plural(sel.jornadas, 'jornada', 'jornadas')} · puntualidad ${pct1(sel.puntualidad)} · ${sel.tardes} tardes (${sel.minTarde} min) · ${sel.sinMarcar} sin marcar · ${sel.conPermiso} con permiso</p>
+            <p class="hint">${plural(sel.jornadas, 'jornada', 'jornadas')} · puntualidad ${pct1(sel.puntualidad)} · ${sel.tardes} tardes (${sel.minTarde} min) · ${hm(sel.extraMin)} adicional · ${sel.sinMarcar} sin marcar · ${sel.conPermiso} con permiso${sel.ajustes ? ` · ${plural(sel.ajustes, 'horario ajustado', 'horarios ajustados')}` : ''}</p>
             ${sel.dias.length ? `<ul class="chips-dia">${sel.dias.map((d) => `<li><small>${esc(fechaCorta(d.fecha))}</small><span class="chip ${d.cls} xs">${esc(d.txt)}</span></li>`).join('')}</ul>` : '<p class="vacio">Sin novedades en este periodo.</p>'}</div>` : '<p class="hint">Toca un nombre para ver el detalle por día.</p>'}
       </section>`;
-    const cols = [['nombre', 'Persona'], ['jornadas', 'Jornadas'], ['tardes', 'Tardes'], ['minTarde', 'Min. tarde'], ['almLargos', 'Alm. largos'], ['salidasAntes', 'Salidas antes'], ['extraMin', 'Extra'], ['sinMarcar', 'Sin marcar'], ['conPermiso', 'Permiso'], ['comSin', 'Sin confirmar'], ['puntualidad', 'Puntualidad']];
+    const cols = [['nombre', 'Persona'], ['jornadas', 'Jornadas'], ['tardes', 'Tardes'], ['minTarde', 'Min. tarde'], ['almLargos', 'Alm. largos'], ['salidasAntes', 'Salidas antes'], ['extraMin', 'Adicional'], ['sinMarcar', 'Sin marcar'], ['conPermiso', 'Permiso'], ['comSin', 'Sin confirmar'], ['puntualidad', 'Puntualidad']];
     const o = I.orden;
     const ord = filas.slice().sort((a, b) => {
       const va = o.col === 'nombre' ? a.p.nombre : a[o.col], vb = o.col === 'nombre' ? b.p.nombre : b[o.col];
@@ -1838,13 +1919,18 @@
       const pg = total ? (leidos / total) * 100 : null;
       conf = `<section class="card"><div class="sec-h"><h2>Confirmación de comunicados</h2><span class="chip ${pg == null ? 'mute' : pg >= 90 ? 'ok' : 'warn'}">${pct1(pg)}</span></div><ul class="conf">${items}</ul></section>`;
     }
+    const listaAj = (I.datos.ajustes || []).filter((a) => personas2(persona(a.persona_id) || {}) && a.fecha >= I.desde && a.fecha <= I.hasta)
+      .sort((a, b) => (a.fecha < b.fecha ? 1 : a.fecha > b.fecha ? -1 : 0));
+    const ajustesSec = listaAj.length ? `<section class="card"><div class="sec-h"><h2>Horarios ajustados</h2><span class="hint">Entradas tempranas con permiso: la salida se mide contra la hora autorizada</span></div>
+        <div class="tablewrap"><table class="rep aj-tabla"><thead><tr><th scope="col">Fecha</th><th scope="col">Persona</th><th scope="col">Salida</th><th scope="col">Autorizó</th><th scope="col">Motivo</th></tr></thead>
+        <tbody>${listaAj.map((a) => `<tr><td>${esc(fechaCorta(a.fecha))}</td><th scope="row">${esc(nombreDe(a.persona_id))}</th><td>${a.salida ? esc(hhmm(a.salida)) : 'La de siempre'}</td><td>${esc(nombreDe(a.autorizo))}</td><td>${esc(a.motivo)}</td></tr>`).join('')}</tbody></table></div></section>` : '';
     function personas2(p) { return lideraSede(p.sede_id) && (I.sede === 'todas' || String(p.sede_id) === String(I.sede)) && (I.area === 'todas' || String(p.area_id) === String(I.area)); }
     return cab + kpis
       + `<div class="grid-rep">
           <section class="card"><div class="sec-h"><h2>Llegadas tarde por ${tramosInforme(I.desde, I.hasta).por}</h2></div>${graficaDias(porDia)}</section>
           ${ranking}
         </div>`
-      + tabla + conf;
+      + tabla + ajustesSec + conf;
   }
 
   // Exporta el informe a CSV para Excel. tipo: 'resumen' (una fila por persona) o 'detalle' (una fila por jornada).
@@ -1856,16 +1942,16 @@
     const base = (r) => [r.p.nombre, r.p.correo, (sedeDe(r.p.sede_id) || {}).nombre || '', (areaDe(r.p.area_id) || {}).nombre || ''];
     let cab, datos;
     if (tipo === 'detalle') {
-      cab = ['Fecha', 'Día', 'Persona', 'Correo', 'Sede', 'Área', 'Turno', 'Entrada programada', 'Entrada marcada', 'Minutos tarde', 'Almuerzo (min)', 'Salida programada', 'Salida marcada', 'Diferencia salida (min)', 'Novedades'];
+      cab = ['Fecha', 'Día', 'Persona', 'Correo', 'Sede', 'Área', 'Turno', 'Entrada programada', 'Entrada marcada', 'Minutos tarde', 'Almuerzo (min)', 'Salida esperada', 'Salida marcada', 'Diferencia salida (min)', 'Tiempo adicional (min)', 'Horario ajustado', 'Novedades'];
       datos = [];
-      filas.forEach((r) => r.registro.forEach((g) => datos.push([g.fecha, DIAS_LARGOS[diaSemana(g.fecha) - 1], ...base(r), g.turno, g.entProg, g.ent, g.tarde || '', g.alm, g.salProg, g.sal, g.difSal, g.novedad.join(' · ') || 'Al día'])));
+      filas.forEach((r) => r.registro.forEach((g) => datos.push([g.fecha, DIAS_LARGOS[diaSemana(g.fecha) - 1], ...base(r), g.turno, g.entProg, g.ent, g.tarde || '', g.alm, g.salProg, g.sal, g.difSal, g.adicional, g.ajuste, g.novedad.join(' · ') || 'Al día'])));
       datos.sort((x, y) => (x[0] < y[0] ? -1 : x[0] > y[0] ? 1 : x[2].localeCompare(y[2], 'es')));
     } else {
-      cab = ['Persona', 'Correo', 'Sede', 'Área', 'Jornadas', 'Llegadas tarde', 'Minutos tarde', 'Promedio tarde (min)', 'Almuerzos largos', 'Salidas antes', 'Horas extra (min)', 'Sin marcar', 'Con permiso', 'Comunicados sin confirmar', 'Puntualidad %'];
+      cab = ['Persona', 'Correo', 'Sede', 'Área', 'Jornadas', 'Llegadas tarde', 'Minutos tarde', 'Promedio tarde (min)', 'Almuerzos largos', 'Salidas antes', 'Minutos salida antes', 'Jornadas con tiempo adicional', 'Tiempo adicional (min)', 'Horarios ajustados', 'Sin marcar', 'Con permiso', 'Comunicados sin confirmar', 'Puntualidad %'];
       datos = filas.map((r) => [
         ...base(r),
         r.jornadas, r.tardes, r.minTarde, r.tardes ? (r.minTarde / r.tardes).toFixed(1).replace('.', ',') : '0',
-        r.almLargos, r.salidasAntes, r.extraMin, r.sinMarcar, r.conPermiso, r.comSin,
+        r.almLargos, r.salidasAntes, r.minAntes, r.diasExtra, r.extraMin, r.ajustes, r.sinMarcar, r.conPermiso, r.comSin,
         r.puntualidad == null ? '' : r.puntualidad.toFixed(1).replace('.', ','),
       ]);
     }
@@ -3651,6 +3737,8 @@
           <li>Tienes <b>${t.entrada} minutos</b> de gracia en la entrada y <b>${t.almuerzo} minutos</b> en el almuerzo.</li>
           <li>Si tu turno no tiene almuerzo (por ejemplo, los sábados), solo marcas entrada y salida.</li>
           <li>Si hoy no almuerzas, usa «Hoy no almuerzo · marcar salida».</li>
+          <li>La salida también se mide: si te quedas más de <b>${t.salida} minutos</b> después de tu hora, el informe lo cuenta como tiempo adicional.</li>
+          <li>Si te autorizaron a <b>entrar y salir más temprano</b>, al marcar la entrada (${t.temprano} min o más antes de tu turno) se abre una ventana: escribe el motivo, si cambia tu hora de salida y quién lo autorizó. Así tu salida no cuenta como «salida antes». Si la cerraste, en el pase aparece «Registrar autorización».</li>
           <li>Si tienes vacaciones, permiso o incapacidad aprobados, ese día no tienes que marcar.</li>
         </ul>` },
       { id: 'grupos', titulo: 'Grupos de viaje', ver: true, html: `<ul>
@@ -3701,7 +3789,7 @@
           <li><b>Malla:</b> carga una vez el <b>horario fijo</b> de cada persona; la malla de cada semana se llena sola. Para un día distinto (un festivo, un cambio) toca la celda en «Semana». «↺ Volver al horario fijo» deshace el cambio.</li>
           <li><b>Turnos:</b> son las franjas de horario. Si cambias sus horas, cambian para todas las personas que lo tienen, también hacia atrás en los informes.</li>
           <li><b>Asistencia:</b> quién está trabajando hoy comparado con la malla. Toca «Actualizar» para ver lo último.</li>
-          <li><b>Informes:</b> elige el periodo (un mes, el trimestre, el año, los últimos 7, 30 o 90 días) o pon fechas libres en «Desde» y «Hasta», hasta un año. Muestra puntualidad, llegadas tarde por día, semana o mes según el largo del periodo, quién llegó más tarde y detalle por persona. «Exportar resumen» baja una fila por persona; «Detalle por día», una fila por jornada con horas marcadas y novedades.</li>
+          <li><b>Informes:</b> elige el periodo (un mes, el trimestre, el año, los últimos 7, 30 o 90 días) o pon fechas libres en «Desde» y «Hasta», hasta un año. Muestra puntualidad, llegadas tarde por día, semana o mes según el largo del periodo, quién llegó más tarde, el tiempo adicional (lo que la gente se queda después de su salida), los horarios ajustados por entrada temprana con quién los autorizó, y detalle por persona. «Exportar resumen» baja una fila por persona; «Detalle por día», una fila por jornada con horas marcadas y novedades.</li>
           <li><b>Comunicados:</b> publica avisos con imágenes y mira quién confirmó y quién falta.</li>
         </ul>` },
       { id: 'gerencia', titulo: 'Para la gerencia y la administración', ver: esGerencia(), html: `<ul>
@@ -4162,6 +4250,8 @@
     if (d.accion) {
       switch (d.accion) {
         case 'menu': S.menu = !S.menu; render(); return;
+        case 'abrirAjuste': abrirAjuste(); return;
+        case 'cerrarAjuste': S.ajuste = null; render(); return;
         case 'gfichaCerrar': cerrarFichaGrupo(true); return;
         case 'gParroquiaTodas': S.grupos.parroquia = ''; render(); return;
         case 'tcAbrir': S.tc.abierto = d.panel; S.tc.borrador = {}; S.tc.confirmar = null; S.tc.archivoRegistro = null; render(); { const f = document.querySelector('.tc-panel input:not([type=file]), .tc-panel textarea'); if (f) f.focus(); } return;
@@ -4368,6 +4458,12 @@
         await cargarInicio();
         toast(`${PASOS.find((x) => x.tipo === tipo).nombre} marcada a las ${hhmm(horaEn(miTz()))}.`);
       });
+      // Si entró bastante antes de su turno, pregunta de una vez por la autorización
+      if (tipo === 'entrada' && S.hoy && !S.hoy.ajuste && S.hoy.marcas.some((m) => m.tipo === 'entrada')) {
+        const t = turnoHoy(), mm = {};
+        S.hoy.marcas.forEach((m) => { mm[m.tipo] = m; });
+        if (t && conHorario(t) && minAntesEntrada(t, mm, miTz()) >= tol().temprano) abrirAjuste();
+      }
       return;
     }
     if (d.semana) {
@@ -4611,6 +4707,22 @@
       return;
     }
     if (tipo === 'olvido') { await pedirEnlace(f.correo.value.trim().toLowerCase()); return; }
+    if (tipo === 'ajuste') {
+      const A = S.ajuste;
+      if (!A) return;
+      const motivo = String(A.motivo || '').trim();
+      if (motivo.length < 3) { toast('Escribe el motivo.', 'bad'); return; }
+      if (!A.autorizo) { toast('Elige quién lo autorizó.', 'bad'); return; }
+      const salida = A.opcion === 'igual' ? null : A.opcion === 'corre' ? hm(A.corrida).padStart(5, '0') : A.salida;
+      if (A.opcion === 'otra' && !/^\d{2}:\d{2}/.test(salida || '')) { toast('Pon la nueva hora de salida.', 'bad'); return; }
+      await accion('ajuste', async () => {
+        await q(sb.rpc('ajustar_jornada', { p_motivo: motivo, p_salida: salida, p_autorizo: A.autorizo }));
+        S.ajuste = null;
+        await cargarInicio();
+        toast(salida ? `Listo: tu salida de hoy queda a las ${hhmm(salida)}.` : 'Listo: quedó registrado quién autorizó tu entrada temprana.');
+      });
+      return;
+    }
     if (tipo === 'gesTarea') {
       const url = f.url.value.trim(), token = f.token.value.trim();
       await accion('gesTarea', async () => {
@@ -4657,6 +4769,11 @@
   const borradorDe = (k) => (k === 'com' ? S.com.borrador : k === 'sol' ? S.sol.borrador : k === 'grupo' ? S.grupos.borrador : k === 'tc' ? S.tc.borrador : S.equipo.borrador);
   document.addEventListener('input', (ev) => {
     const el = ev.target;
+    if (el.dataset && el.dataset.aj && S.ajuste) {
+      S.ajuste[el.dataset.aj] = el.value;
+      if (el.dataset.aj === 'salida') { S.ajuste.opcion = 'otra'; const r = document.querySelector('input[name=opcion][value=otra]'); if (r) r.checked = true; }
+      return;
+    }
     if (el.id === 'ofi-nombre') { S.ofi.nombre = el.value; return; }
     if (el.dataset && el.dataset.tcimport !== undefined) {
       const antes = !!S.tc.importar.texto.trim();
@@ -4695,6 +4812,7 @@
 
   document.addEventListener('change', async (ev) => {
     const el = ev.target, d = el.dataset || {};
+    if (d.aj && S.ajuste) { S.ajuste[d.aj] = el.value; if (d.aj === 'salida') S.ajuste.opcion = 'otra'; return; }
     if (d.gsel) { S.ges.f[d.gsel] = el.value; render(); return; }
     if (d.ccsel) { S.ges.cc[d.ccsel] = el.value; if (d.ccsel === 'cliente') S.ges.cc.quitadas = new Set(); render(); return; }
     if (d.ccventa) { const Q = S.ges.cc.quitadas; if (el.checked) Q.delete(d.ccventa); else Q.add(d.ccventa); render(); return; }
@@ -4885,6 +5003,7 @@
     if (ev.key === 'Escape') {
       if (fichaG.id) { cerrarFichaGrupo(true); return; }
       if (S.lb) { S.lb = null; render(); return; }
+      if (S.ajuste && S.ocupado !== 'ajuste') { S.ajuste = null; render(); return; }
       if (S.menu) { S.menu = false; render(); const a = document.querySelector('.avatar'); if (a) a.focus(); return; }
       if (S.malla.edit) { S.malla.edit = null; render(); return; }
     }

@@ -52,6 +52,14 @@
     const [y, m, d] = fecha.split('-').map(Number);
     return new Date(Date.UTC(y, m - 1, d, OFFSET_H, 0, 0) + min * 60000 + entre(0, 59) * 1000).toISOString();
   }
+  // Igual que marcaISO pero sin azar (no mueve la semilla de los datos de ejemplo)
+  const marcaFija = (fecha, min) => { const [y, m, d] = fecha.split('-').map(Number); return new Date(Date.UTC(y, m - 1, d, OFFSET_H, 0, 0) + min * 60000).toISOString(); };
+  const hhmmss = (min) => `${String(Math.floor(min / 60)).padStart(2, '0')}:${String(min % 60).padStart(2, '0')}:00`;
+  function minutoDe(iso) {
+    const p = {};
+    new Intl.DateTimeFormat('en-CA', { timeZone: TZ, hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).formatToParts(new Date(iso)).forEach((x) => { p[x.type] = x.value; });
+    return +p.hour * 60 + +p.minute;
+  }
   const err = (message, code) => ({ message, code: code || 'P0001', details: null, hint: null });
   const espera = () => new Promise((r) => setTimeout(r, LATENCIA));
 
@@ -69,7 +77,7 @@
       { id: 6, sede_id: 1, codigo: 'D', nombre: 'Descanso', entrada: null, salida_almuerzo: null, regreso_almuerzo: null, salida: null, activo: true },
       { id: 7, sede_id: 1, codigo: 'V', nombre: 'Vacaciones', entrada: null, salida_almuerzo: null, regreso_almuerzo: null, salida: null, activo: true },
     ],
-    perfiles: [], configuracion: [], horario_base: [], horario_rotacion: [], malla: [], malla_historial: [], marcas: [],
+    perfiles: [], configuracion: [], horario_base: [], horario_rotacion: [], malla: [], malla_historial: [], marcas: [], ajustes_jornada: [],
     herramientas: [
       { id: 1, nombre: 'Gestor de reservas', descripcion: 'La app de operación de Caminos: ventas, reservas, pasajeros y proveedores.', icono: 'reservas', pie: 'AppSheet', url: 'https://www.appsheet.com/start/eb769707-eafd-445c-aa00-eb637321ef76#appName=GESTORDERESERVAS-CAMINOS2-850658711&view=INICIO', orden: 1, areas_visibles: null, activo: true },
       { id: 2, nombre: 'Caminos Documentos', descripcion: 'Cotizaciones, confirmaciones, vouchers e itinerarios con el diseño de Caminos.', icono: 'documentos', pie: 'Claude', url: 'https://claude.ai/artifact/WPzKkP7MwdKBaGrrGVpZ1Y', orden: 2, areas_visibles: null, activo: true },
@@ -88,7 +96,7 @@
   const SERIAL = ['sedes', 'areas', 'turnos', 'malla_historial', 'marcas', 'herramientas', 'comunicados', 'comunicado_imagenes', 'solicitudes', 'solicitud_adjuntos', 'grupos', 'equipos', 'tc_tarjetas', 'tc_categorias', 'tc_extractos', 'tc_registros', 'tc_movimientos'];
   const CLAVES = {
     malla: ['persona_id', 'fecha'], horario_base: ['persona_id', 'semana', 'dia'], horario_rotacion: ['persona_id'], comunicado_lecturas: ['comunicado_id', 'persona_id'],
-    revisores: ['persona_id'], configuracion: ['clave'], perfiles: ['id'], turnos: ['sede_id', 'codigo'], marcas: ['persona_id', 'fecha', 'tipo'],
+    revisores: ['persona_id'], configuracion: ['clave'], perfiles: ['id'], turnos: ['sede_id', 'codigo'], marcas: ['persona_id', 'fecha', 'tipo'], ajustes_jornada: ['persona_id', 'fecha'],
   };
   const sigId = {};
 
@@ -119,7 +127,7 @@
   const INICIO = sumarDias(HOY, -60);
   db.configuracion = [
     { clave: 'modulo_solicitudes', valor: { activo: true }, actualizado: ahoraISO() },
-    { clave: 'tolerancias', valor: { entrada_min: 5, almuerzo_min: 5 }, actualizado: ahoraISO() },
+    { clave: 'tolerancias', valor: { entrada_min: 5, almuerzo_min: 5, salida_min: 5, temprano_min: 30 }, actualizado: ahoraISO() },
     { clave: 'meta_puntualidad', valor: { porcentaje: 95 }, actualizado: ahoraISO() },
     { clave: 'validar_ip', valor: { activo: false }, actualizado: ahoraISO() },
     { clave: 'validar_equipo', valor: { activo: false }, actualizado: ahoraISO() },
@@ -217,6 +225,17 @@
     // regreso sin entrada no debe existir (por si Santiago no marcó la entrada hoy)
     db.marcas = db.marcas.filter((x) => x.fecha !== HOY || x.tipo === 'entrada' || db.marcas.some((y) => y.persona_id === x.persona_id && y.fecha === HOY && y.tipo === 'entrada'));
     db.marcas.forEach((x, i) => { x.id = i + 1; });
+    // Ejemplo de entrada temprana autorizada: Valentina entró y salió 1 hora antes hace unos días
+    const fAj = [8, 9, 10, 11, 12, 13].map((n) => sumarDias(HOY, -n))
+      .find((f) => ['entrada', 'salida'].every((tp) => db.marcas.some((x) => x.persona_id === ID.valentina && x.fecha === f && x.tipo === tp)));
+    if (fAj) {
+      const t = db.turnos.find((x) => x.id === mallaEfectiva(fAj, fAj).find((m) => m.persona_id === ID.valentina).turno_id);
+      db.marcas.filter((x) => x.persona_id === ID.valentina && x.fecha === fAj).forEach((x) => {
+        const base = { entrada: t.entrada, salida_almuerzo: t.salida_almuerzo, regreso_almuerzo: t.regreso_almuerzo, salida: t.salida }[x.tipo];
+        x.hora = marcaFija(fAj, toMin(base) - 60 + (x.tipo === 'salida' ? 2 : 0));
+      });
+      db.ajustes_jornada.push({ persona_id: ID.valentina, fecha: fAj, motivo: 'Inventario de documentos de viaje', salida: hhmmss(toMin(t.salida) - 60), autorizo: ID.carolina, creado: marcaFija(fAj, toMin(t.entrada) - 55) });
+    }
   })();
 
   // Grupos de ejemplo (ficticios), con fechas alrededor de hoy
@@ -433,6 +452,7 @@
   // Reglas de lectura (USING de select)
   const LEER = {
     marcas: (r) => r.persona_id === uid() || lideraSede(perfil(r.persona_id).sede_id),
+    ajustes_jornada: (r) => r.persona_id === uid() || r.autorizo === uid() || lideraSede(perfil(r.persona_id).sede_id),
     comunicados: comVisible,
     comunicado_imagenes: (r) => { const c = db.comunicados.find((x) => x.id === r.comunicado_id); return !!c && comVisible(c); },
     comunicado_lecturas: (r) => r.persona_id === uid() || esGerencia() || puedePublicar(),
@@ -466,6 +486,7 @@
     horario_base: (r) => lideraSede(sedeDePersona(r.persona_id)) || esSupervisor(),
     horario_rotacion: (r) => lideraSede(sedeDePersona(r.persona_id)) || esSupervisor(),
     marcas: (r, op) => op !== 'insert' && lideraSede(sedeDePersona(r.persona_id)),
+    ajustes_jornada: (r, op) => op === 'delete' && lideraSede(sedeDePersona(r.persona_id)),
     comunicados: (r, op) => (op === 'insert' ? puedePublicar() && r.autor_id === uid() : r.autor_id === uid() || esGerencia()),
     comunicado_imagenes: (r) => autorOGerencia(r.comunicado_id),
     comunicado_lecturas: (r, op) => op === 'insert' && r.persona_id === uid() && esDestinatario(db.comunicados.find((c) => c.id === r.comunicado_id) || {}, uid()),
@@ -724,6 +745,27 @@
       const m = { id: db.marcas.length + 1, persona_id: p.id, fecha: hoy, tipo: p_tipo, hora: ahoraISO(), ip: IP_DEMO, equipo_id: eq ? eq.id : null, corregida_por: null };
       db.marcas.push(m);
       return m;
+    },
+    ajustar_jornada({ p_motivo, p_salida, p_autorizo }) {
+      const p = yo();
+      if (!p) throw err('Tu cuenta no está activa.');
+      const hoy = fechaHoy(), temprano = (cfg('tolerancias') || {}).temprano_min ?? 30;
+      if (String(p_motivo || '').trim().length < 3) throw err('Escribe el motivo.');
+      const a = db.perfiles.find((x) => x.id === p_autorizo);
+      if (!a || !a.activo || a.id === p.id || !(['gerente', 'directora', 'supervisor'].includes(a.rol) || a.es_admin)) throw err('Elige quién lo autorizó (gerencia, dirección o supervisión).');
+      const me = mallaEfectiva(hoy, hoy).find((m) => m.persona_id === p.id);
+      const t = me && db.turnos.find((x) => x.id === me.turno_id);
+      if (!t || !t.entrada) throw err('Hoy no tienes un turno con horario.');
+      const ent = db.marcas.find((m) => m.persona_id === p.id && m.fecha === hoy && m.tipo === 'entrada');
+      if (!ent) throw err('Primero marca la entrada.');
+      if (db.marcas.some((m) => m.persona_id === p.id && m.fecha === hoy && m.tipo === 'salida')) throw err('Ya marcaste la salida; el ajuste ya no se puede cambiar.');
+      const entMin = minutoDe(ent.hora);
+      if (entMin > toMin(t.entrada) - temprano) throw err(`Solo aplica si entraste al menos ${temprano} minutos antes de tu turno.`);
+      if (p_salida && toMin(p_salida) <= entMin) throw err('La nueva hora de salida debe ser después de tu entrada.');
+      const fila = { persona_id: p.id, fecha: hoy, motivo: String(p_motivo).trim(), salida: p_salida ? hhmmss(toMin(p_salida)) : null, autorizo: p_autorizo, creado: ahoraISO() };
+      db.ajustes_jornada = db.ajustes_jornada.filter((x) => !(x.persona_id === p.id && x.fecha === hoy));
+      db.ajustes_jornada.push(fila);
+      return fila;
     },
     revisar_solicitud({ p_id, p_aprobar, p_comentario }) {
       const s = db.solicitudes.find((x) => x.id === p_id);
